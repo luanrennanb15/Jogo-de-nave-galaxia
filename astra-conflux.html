@@ -396,7 +396,7 @@ const ITEMS = {
   /* Módulos não somam número: cada um liga um comportamento. */
   modulo: {
     MISSIL: { nome:"MX-Míssil",  curto:"míssil automático", preco:70000,
-              desc:"Enquanto você atira, dispara mísseis sozinho no seu alvo." },
+              desc:"Passivo: enquanto você estiver atacando, lança sozinho o foguete que estiver selecionado na barra, a cada 2,6s, gastando do estoque dele. Parar o ataque para os lançamentos. Não ocupa espaço na barra." },
     EMP:    { nome:"EMP-9",      curto:"pulso de sobrecarga", preco:60000,
               desc:"Você aciona quando quiser: solta um pulso que faz os inimigos por perto perderem a mira por 3s. Recarrega em 10s." },
     VEU:    { nome:"Véu-7",      curto:"camuflagem", preco:95000,
@@ -409,7 +409,7 @@ const ITEM_VAL = { laser:"dmg", escudo:"sh", motor:"spd" };
 
 /* números de cada módulo */
 const MODULOS = {
-  MISSIL: { cd: 2600,  dano: 340 },
+  MISSIL: { cd: 2600 },   // lança o foguete selecionado na barra, a cada 2,6s
   EMP:    { cd: 10000, dur: 3000,  raio: 720 },
   VEU:    { cd: 10000 },
   NOVA:   { cd: 20000, dano: 1200, raio: 340 },
@@ -929,7 +929,7 @@ function iniciarSetor(estado) {
     hp: st.hp != null ? st.hp : maxHp(),
     sh: st.sh != null ? st.sh : maxShield(),
     alvo: null, atacando: false, ultimoTiro: 0, ultimoDano: -9999, ultimoFoguete: -9999,
-    ultimoMovimento: -9999,
+    ultimoMovimento: -9999, ultimoMissil: -9999, cdAmmo: {},
     shCfg: Array.isArray(st.shCfg) ? st.shCfg.slice() : [],   // escudo guardado de cada config
   };
   G.inimigos = []; G.loot = []; G.caixas = []; G.particulas = []; G.danos = []; G.tiros = [];
@@ -1340,14 +1340,30 @@ function atualizar(dt) {
     quebrarCamuflagem();
   }
 
-  // módulo de míssil automático: acompanha o seu ataque
+  /* Módulo MX-Míssil: lança sozinho o foguete que estiver selecionado na barra,
+     enquanto você estiver atacando. Gasta do estoque daquele foguete. */
   const nMissil = contarModulo("MISSIL");
   if (nMissil && p.atacando && p.alvo && G.inimigos.includes(p.alvo) &&
+      dist(p.x, p.y, p.alvo.x, p.alvo.y) <= 720 &&
       T - (p.ultimoMissil || 0) > MODULOS.MISSIL.cd) {
-    p.ultimoMissil = T;
-    for (let i = 0; i < nMissil; i++)
-      atirarLaser(p, p.alvo, MODULOS.MISSIL.dano * (1 + 0.02*rankIndex()), "#ff8a3d", true, true);
-    p.alvo.permitido = T + PERMISSAO_REVIDE;
+    const f = ROCKETS[G.foguetSel];
+    const disponiveis = Math.min(nMissil, G.foguetes[G.foguetSel] || 0);
+    if (f && disponiveis > 0) {
+      p.ultimoMissil = T;
+      p.semFoguete = false;
+      G.foguetes[G.foguetSel] -= disponiveis;
+      const dano = f.dmg * (1 + 0.02*rankIndex());
+      for (let i = 0; i < disponiveis; i++)
+        atirarLaser(p, p.alvo, dano, "#ffb347", true, true,
+          { desvio: (i - (disponiveis-1)/2) * 12 });
+      p.alvo.agro = true;
+      p.alvo.permitido = T + PERMISSAO_REVIDE;
+      quebrarCamuflagem();
+      montarBarraHab();
+    } else if (f && !p.semFoguete) {
+      p.semFoguete = true;
+      toast("MX-Míssil sem " + f.nome + " no porão");
+    }
   }
 
   // inimigos
@@ -1403,8 +1419,8 @@ function atualizar(dt) {
         en.sh -= roubado;
         en.ultimoDano = T; en.agro = true; en.permitido = T + PERMISSAO_REVIDE;
         p.sh = Math.min(maxShield(), p.sh + roubado);
-        G.danos.push({ x:en.x, y:en.y-28, txt:"-"+Math.round(roubado)+" esc", t:T, cor:"#63e6ff" });
-        if (roubado > 0) G.danos.push({ x:p.x, y:p.y-46, txt:"+"+Math.round(roubado), t:T, cor:"#63e6ff" });
+        numeroDano(en.x, en.y - 28, "-" + fmt(roubado) + " esc", "#63e6ff");
+        if (roubado > 0) numeroDano(p.x, p.y - 46, "+" + fmt(roubado), "#63e6ff");
         faisca(en.x, en.y, "#4cc9ff");
       } else if (b.doJogador) {
         aplicarDano(b.alvo, b.dano);
@@ -1574,7 +1590,7 @@ function danoNoJogador(dano, autor) {
   const noCasco = dano - absorvido;      // o que o escudo não segurou
   p.hp -= noCasco;
 
-  G.danos.push({ x:p.x, y:p.y-24, txt:"-"+Math.round(dano), t:G.tempo, cor:"#ff8a8a" });
+  numeroDano(p.x, p.y - 24, "-" + fmt(dano), "#ff8a8a");
   if (p.hp <= 0) morrerJogador(autor || p.ultimoAgressor);
 }
 
@@ -1639,6 +1655,17 @@ function dispararNova() {
   toast(n ? "Supernova atingiu " + n + " inimigo(s)" : "Supernova sem alvos por perto");
 }
 
+/* Cada acerto ganha o seu próprio número. Quando vários chegam juntos —
+   uma rajada, por exemplo — eles se espalham em vez de virar um valor só. */
+function numeroDano(x, y, txt, cor) {
+  const juntos = G.danos.filter(d => G.tempo - d.t < 450 && Math.abs(d.x - x) < 70).length;
+  G.danos.push({
+    x: x + (Math.random() - 0.5) * 44 + (juntos % 2 ? 16 : -16),
+    y: y - juntos * 14,
+    txt, t: G.tempo, cor,
+  });
+}
+
 function aplicarDano(en, dano) {
   en.ultimoDano = G.tempo;
   // atacar libera o revide por alguns segundos, mesmo na zona segura
@@ -1646,7 +1673,7 @@ function aplicarDano(en, dano) {
   en.agro = true;
   const abs = Math.min(en.sh, dano);
   en.sh -= abs; dano -= abs; en.hp -= dano;
-  G.danos.push({ x:en.x, y:en.y-28, txt:"-"+Math.round(abs+dano), t:G.tempo, cor:"#ffe08a" });
+  numeroDano(en.x, en.y - 28, "-" + fmt(abs + dano), "#ffe08a");
 }
 
 function matarInimigo(en) {
@@ -2454,6 +2481,8 @@ function renderLog() {
 }
 
 const ICONE_MOD = { VEU:"◈", NOVA:"✷", EMP:"◉", MISSIL:"➶" };
+/* só estes vão para a barra: o MX-Míssil trabalha sozinho na nave */
+const MODULO_MANUAL = { VEU:true, NOVA:true, EMP:true };
 
 /* atalho de cada espaço: fileira de cima 1..8, fileira de baixo F1..F8 */
 const teclaDaCelula = (r, c) => (r === 0 ? "" : "F") + (c + 1);
@@ -2473,6 +2502,8 @@ function celulaBarra(cel, r, c) {
       ${tec}<div>${a.icone}</div><small>${a.nome.slice(0,7)}</small><div class="cd hidden"></div></div>`;
   }
   if (cel.k === "mod") {
+    if (!MODULO_MANUAL[cel.id]) return `<div class="ab vazio" onclick="abrirEditorBarra()"
+      title="Esse módulo é automático — não ocupa espaço na barra">${tec}</div>`;
     const it = ITEMS.modulo[cel.id], tem = temModulo(cel.id);
     return `<div class="ab mod ${tem ? "" : "locked"}" id="ab_mod_${cel.id}" ${abre}
       title="${it ? it.nome : cel.id}${tem ? "" : " — não equipado"} · atalho ${teclaDaCelula(r,c)}">
@@ -2536,7 +2567,9 @@ function acionarCelula(r, c) {
     return;
   }
   if (cel.k === "fog") {
-    G.foguetSel = cel.id;
+    const trocou = G.foguetSel !== cel.id;
+    G.foguetSel = cel.id;                      // trocar é livre, mesmo carregando
+    if (trocou) toast("Foguete: " + ROCKETS[cel.id].nome);
     atirarFoguete();
     montarBarraHab();
   }
@@ -2630,7 +2663,8 @@ function abrirEditorBarra() {
       ${grupo("Munição", AMMO_ORDER.map(k => ({ k:"ammo", id:k, nome:AMMO[k].nome })))}
       ${grupo("Foguetes", ROCKET_ORDER.map(k => ({ k:"fog", id:k, nome:ROCKETS[k].nome })))}
       ${grupo("Habilidades", ABILITIES.map(a => ({ k:"hab", id:a.id, nome:a.nome })))}
-      ${grupo("Módulos", Object.keys(ITEMS.modulo).map(id => ({ k:"mod", id, nome:ITEMS.modulo[id].nome })))}
+      ${grupo("Módulos", Object.keys(ITEMS.modulo).filter(id => MODULO_MANUAL[id])
+              .map(id => ({ k:"mod", id, nome:ITEMS.modulo[id].nome })))}
     </div>
     <div class="foot">
       <button onclick="G.barra=barraPadrao();montarBarraHab();abrirEditorBarra()">Voltar ao padrão</button>
@@ -2774,8 +2808,14 @@ function atualizarHUD() {
   marcarCd(el("ab_mod_NOVA"), (p.novaCd || 0) - G.tempo, false);
   marcarCd(el("ab_mod_EMP"),  (p.empCd  || 0) - G.tempo, false);
 
+  /* Os três foguetes compartilham a mesma recarga: cada lançamento, manual ou
+     do MX-Míssil, deixa todos carregando. Trocar a seleção continua liberado. */
+  const cdManual = ROCKET_CD - (G.tempo - p.ultimoFoguete);
+  const cdAuto = temModulo("MISSIL")
+    ? MODULOS.MISSIL.cd - (G.tempo - (p.ultimoMissil == null ? -1e9 : p.ultimoMissil)) : -1;
+  const cdFog = Math.max(cdManual, cdAuto);
   for (const k of ROCKET_ORDER)
-    marcarCd(el("ab_fog_" + k), ROCKET_CD - (G.tempo - p.ultimoFoguete), G.foguetSel === k);
+    marcarCd(el("ab_fog_" + k), cdFog, G.foguetSel === k);
 
   for (const k of AMMO_ORDER)
     if (AMMO[k].rajada) marcarCd(el("ab_ammo_" + k), ((p.cdAmmo || {})[k] || 0) - G.tempo);
@@ -2931,7 +2971,7 @@ function detalheLoja() {
   else if (cat === "foguete") {
     const f = ROCKETS[id];
     nome = f.nome;
-    desc = "Disparo pesado, acionado pelo espaço dele na barra, com 3,4 segundos de recarga. Cada tiro gasta uma unidade.";
+    desc = "Disparo pesado, acionado pelo espaço dele na barra, com 3,4 segundos de recarga. Cada tiro gasta uma unidade. Com o módulo MX-Míssil equipado, o foguete que estiver selecionado é lançado sozinho enquanto você ataca.";
     info = linha("Dano por foguete", fmt(f.dmg)) + linha("No porão", fmt(G.foguetes[id] || 0)) +
            linha("Preço por unidade", f.preco + " cr");
     acoes = botaoCompra(f.preco*10,  `comprarFoguete('${id}',10)`,  "Comprar 10") +
@@ -3806,7 +3846,7 @@ function openHelp() {
     <div class="row"><div class="val">O que cada espaço faz</div><div class="muted">munição: passa a atirar com ela, mirando sozinho se você não tiver alvo · foguete: dispara na hora · habilidade e módulo: ativam</div></div>
     <div class="row"><div class="val">Q / E / F</div><div class="muted">reparo · sobrecarga · camuflagem</div></div>
     <div class="row"><div class="val">Barra de ação</div><div class="muted">duas fileiras de 8 espaços no rodapé. A engrenagem ao lado abre o editor: clique num espaço para esvaziar e num item da lista para encaixar. Munição e foguete na barra ficam destacados quando estão em uso — clicar neles seleciona</div></div>
-    <div class="row"><div class="val">Módulos</div><div class="muted">quarto tipo de equipamento, com encaixe próprio na nave: MX-Míssil atira mísseis sozinho enquanto você ataca; EMP-9 é acionado por você e cega os inimigos por perto por 3s; Véu-7 (tecla V) te deixa invisível até você atacar; Supernova (tecla X) explode em área</div></div>
+    <div class="row"><div class="val">Módulos</div><div class="muted">quarto tipo de equipamento, com encaixe próprio na nave: MX-Míssil é passivo e lança sozinho o foguete escolhido na barra enquanto você ataca; EMP-9 é acionado por você e cega os inimigos por perto por 3s; Véu-7 (tecla V) te deixa invisível até você atacar; Supernova (tecla X) explode em área</div></div>
     <div class="row"><div class="val">Carrinho (LOJA)</div><div class="muted">só compra, e funciona de qualquer lugar do mapa: naves, canhões, escudos, motores, módulos, munição, foguetes, drones, melhorias e Skylab (tecla B)</div></div>
     <div class="row"><div class="val">Chave (EQUIP)</div><div class="muted">abre em qualquer lugar para consultar, mas encaixar, tirar, vender e reparar só atracado na estação (tecla N)</div></div>
     <div class="row"><div class="val">C</div><div class="muted">troca entre a configuração 1 e a 2, o mesmo que clicar na engrenagem</div></div>
