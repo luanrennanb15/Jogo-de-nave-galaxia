@@ -1452,9 +1452,13 @@ function atualizar(dt) {
   // --- projéteis em voo ---
   for (let i = G.tiros.length - 1; i >= 0; i--) {
     const b = G.tiros[i];
-    if (b.doJogador && !G.inimigos.includes(b.alvo)) {
-      if (b.salva) fecharSalva(b.salva);        // alvo sumiu: fecha a conta do que já acertou
-      G.tiros.splice(i,1); continue;
+    /* Alvo morreu no meio do caminho: o tiro não some. Vira um projétil órfão,
+       termina o voo até onde o inimigo estava e estoura ali, sem ferir nada. */
+    if (b.doJogador && !b.orfao && !G.inimigos.includes(b.alvo)) {
+      b.orfao = true;
+      b.visual = true;
+      if (b.salva) fecharSalva(b.salva);        // fecha a conta do que já acertou
+      b.alvo = { x: b.alvo.x, y: b.alvo.y };    // ponto fixo no espaço
     }
     // tiro ainda na fila da rajada: espera a vez, colado na nave
     if (b.espera > 0) {
@@ -1469,11 +1473,11 @@ function atualizar(dt) {
     // mínimo de voo ele fecha a mira com força e vai para cima do alvo
     if (b.curvo) {
       const abrindo = (T - b.nascido) < (b.minVoo || 0);
-      b.ang = anguloSuave(b.ang, a, abrindo ? 0.018 : 0.35);
+      b.ang = anguloSuave(b.ang, a, abrindo ? b.kAbre : 0.35);
     } else b.ang = a;
     if (b.curvo && (b.vida % 2 === 0))
       G.particulas.push({ x:b.x, y:b.y, vx:(Math.random()-0.5)*0.5, vy:(Math.random()-0.5)*0.5,
-                          r:1.5+Math.random()*1.5, cor:"#ff5ad0", vida:220+Math.random()*180, max:400 });
+                          r:1.5+Math.random()*1.5, cor:b.cor, vida:220+Math.random()*180, max:400 });
     const passo = b.vel * dt/16;
     const dd = dist(b.x, b.y, b.alvo.x, b.alvo.y);
     const podeAcertar = T - b.nascido >= (b.minVoo || 0);   // míssil precisa do tempo de voo
@@ -1489,7 +1493,9 @@ function atualizar(dt) {
         if (roubado > 0) numeroDano(p.x, p.y - 46, "+" + fmt(roubado), "#63e6ff");
         faisca(en.x, en.y, "#4cc9ff");
       } else if (b.doJogador && b.visual) {
-        faisca(b.alvo.x, b.alvo.y, b.cor);      // rajada de enfeite: só o clarão
+        // enfeite ou tiro órfão: só o clarão, sem dano
+        if (b.curvo || b.foguete) explosao(b.alvo.x, b.alvo.y, b.cor, 14);
+        else faisca(b.alvo.x, b.alvo.y, b.cor);
       } else if (b.doJogador) {
         aplicarDano(b.alvo, b.dano, !!b.salva);
         if (b.salva) {
@@ -1624,7 +1630,7 @@ function atirarLaser(origem, alvo, dano, cor, doJogador, foguete, extra) {
     alvo, dano, cor, doJogador, foguete: !!foguete, de: origem,
     vel: (ex.vel || (foguete ? 9 : (doJogador ? 16 : 12))), vida: 0,
     rouba: !!ex.rouba, curvo: !!ex.curvo, salva: ex.salva || null, espera: ex.espera || 0,
-    visual: !!ex.visual,
+    visual: !!ex.visual, kAbre: ex.kAbre || 0.07,
     forma: ex.forma || (ex.curvo ? "missil" : foguete ? "foguete" : "bolt"),
   });
 }
@@ -1644,19 +1650,24 @@ function cargaLancador() {
 /* Ângulos de saída da salva, em relação à direção do alvo:
    com 5, dois abrem por cima, um sai pelas costas e dois por baixo;
    com 3, um de cada lado e um por trás. Todos fecham a curva depois. */
-/* Os mísseis saem enfileirados na nave e disparam para o lado contrário ao
-   alvo, abrindo em leque. Cada um descreve um arco largo por fora e só
-   depois mergulha no inimigo. */
-const ESPACO_TUBO = 8;
-const ABERTURA_SALVA = 1.15;   // quanto o leque se abre para trás
+/* Os mísseis disparam para o lado contrário ao alvo, contornam e mergulham.
+   Cada salva sorteia como os mísseis se dividem entre três faixas — por cima,
+   pelo meio e por baixo — então o desenho nunca sai igual duas vezes. */
+const FAIXAS_SALVA = [-0.30, 0, 0.30];   // ângulo de cada faixa
+const FAIXAS_TUBO  = [-9, 0, 9];         // de onde saem na nave
+/* Cada faixa curva mirando o alvo; a do meio fecha um pouco mais que as
+   outras, então passa mais perto da nave. Sem voltas completas. */
+const FAIXAS_GIRO  = [0.07, 0.13, 0.07];
 
-function lequeDeSaida(n) {
-  return Array.from({ length:n }, (_,i) =>
-    Math.PI + ((i - (n-1)/2) / Math.max(1,(n-1)/2)) * ABERTURA_SALVA);
-}
-function tubosDeSaida(n) {
-  return Array.from({ length:n }, (_,i) =>
-    ({ fx: 4, fy: (i - (n-1)/2) * ESPACO_TUBO }));
+function distribuirSalva(n) {
+  let faixas;
+  do {
+    faixas = [0,0,0];
+    for (let i = 0; i < n; i++) faixas[Math.floor(Math.random()*3)]++;
+  } while (n > 2 && Math.max(...faixas) === n);   // evita todos na mesma faixa
+  const saida = [];
+  faixas.forEach((q,f) => { for (let i = 0; i < q; i++) saida.push(f); });
+  return saida;
 }
 
 /* Lança-mísseis: salva do projétil selecionado, saindo aberta e curvando
@@ -1686,16 +1697,19 @@ function dispararLancador(auto) {
   // a salva inteira soma num número só quando chega
   const salva = { restantes: n, total: 0, cor: proj.cor, x: p.alvo.x, y: p.alvo.y };
 
-  const saidas = lequeDeSaida(n), tubos = tubosDeSaida(n);
+  const faixas = distribuirSalva(n);
   const cos = Math.cos(p.ang), sen = Math.sin(p.ang);
   for (let i = 0; i < n; i++) {
-    const off = saidas[i], tb = tubos[i];
+    const f = faixas[i];
+    const off = Math.PI + FAIXAS_SALVA[f] + (Math.random()-0.5)*0.1;   // leve variação
+    const fx = 4, fy = FAIXAS_TUBO[f] + (Math.random()-0.5)*5;
     atirarLaser(p, p.alvo, dano, proj.cor, true, true, {
       curvo: true, salva,
-      pos: { x: p.x + tb.fx*cos - tb.fy*sen, y: p.y + tb.fx*sen + tb.fy*cos },
+      pos: { x: p.x + fx*cos - fy*sen, y: p.y + fx*sen + fy*cos },
       angInicial: paraAlvo + off,
-      vel: 11 + Math.random()*1.2,
-      minVoo: 800,                            // 0,8s abrindo a curva antes de poder acertar
+      vel: 11 + Math.random()*1.4,
+      kAbre: FAIXAS_GIRO[f],
+      minVoo: 300 + Math.random()*90,         // cada um abre a curva por um tempo diferente
     });
   }
   p.alvo.agro = true;
