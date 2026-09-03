@@ -1339,7 +1339,8 @@ function iniciarSetor(estado) {
     G.pet.balanco = null; G.pet.lado = 0; G.pet.recuo = PET_RASTRO; G.pet.ritmo = null; G.pet.vel = 1;
     if (G.pet.tem && !G.pet.abatido && G.pet.hp <= 0) G.pet.hp = petMaxHp();
   }
-  rastro = []; inclinacaoTita = 0;
+  rastro = []; inclinacaoTita = 0; poeira = []; choques = [];
+  tremor = { forca: 0, ate: 0 };
   G.inimigos = []; G.loot = []; G.caixas = []; G.particulas = []; G.danos = []; G.tiros = [];
   G.invasao = null; G.coleta = null; G.salto = null; G.saltoAlvo = null; G.portalPerto = null;
   G.proxInvasao = G.tempo + rnd(INVASAO_INTERVALO[0], INVASAO_INTERVALO[1]);
@@ -1410,12 +1411,56 @@ function spawnCaixa() {
   G.caixas.push({ x:p.x, y:p.y, tipo, nasceu: G.tempo });
 }
 
+/* Estrelas em três profundidades, cada uma piscando no seu ritmo. As de
+   trás são pequenas e paradas; as da frente andam mais e brilham mais. */
 function gerarEstrelas() {
   stars = [];
-  for (let i = 0; i < 460; i++)
-    stars.push({ x: Math.random()*WORLD.w, y: Math.random()*WORLD.h,
-                 z: 0.25 + Math.random()*0.75, r: Math.random()*1.6 + 0.3 });
+  for (let i = 0; i < 620; i++) {
+    const z = 0.12 + Math.pow(Math.random(), 1.7) * 0.85;
+    stars.push({
+      x: Math.random()*WORLD.w, y: Math.random()*WORLD.h, z,
+      r: 0.4 + z * (Math.random()*2.0),
+      fase: Math.random()*6.28,
+      ritmo: 900 + Math.random()*2600,
+      cor: Math.random() < 0.18 ? (Math.random() < 0.5 ? "#ffd9b0" : "#bcd8ff") : "#eaf4ff",
+    });
+  }
+  gerarNebulosa();
 }
+
+/* Nebulosa: manchas grandes e macias, em camadas de profundidade diferente.
+   Elas é que tiram o fundo daquele azul chapado. */
+let nebulosa = [];
+function gerarNebulosa() {
+  const s = sectorData();
+  const tons = NEBULA_TONS[G.setor % NEBULA_TONS.length];
+  nebulosa = [];
+  for (let i = 0; i < 11; i++) {
+    nebulosa.push({
+      x: Math.random()*WORLD.w, y: Math.random()*WORLD.h,
+      r: 340 + Math.random()*620,
+      z: 0.06 + Math.random()*0.20,
+      cor: tons[Math.floor(Math.random()*tons.length)],
+      a: 0.05 + Math.random()*0.09,
+      fase: Math.random()*6.28,
+    });
+  }
+  // um corpo distante, quase parado, só para o setor ter um ponto de referência
+  planeta = {
+    x: Math.random()*WORLD.w, y: Math.random()*WORLD.h,
+    r: 120 + Math.random()*130, z: 0.045,
+    cor: tons[0], cor2: s.cor,
+  };
+}
+let planeta = null;
+const NEBULA_TONS = [
+  ["#2a4d8f", "#6a3d9a", "#1f7a8c"],
+  ["#7a2f4a", "#8f5a2a", "#3a2f7a"],
+  ["#1f6b57", "#2a4d8f", "#5a7a2a"],
+  ["#6a2a6a", "#2a2a7a", "#8f3a3a"],
+  ["#8f4a1f", "#7a2f2f", "#4a2a6a"],
+  ["#1a3a5a", "#4a1a5a", "#0f5a4a"],
+];
 
 /* ---------- MISSÕES ---------- */
 function gerarOferta() {
@@ -2015,6 +2060,8 @@ function atualizar(dt) {
   }
   G.danos = G.danos.filter(x => T - x.t < 1400);
 
+  atualizarPoeira(dt);
+  // câmera presa na nave, sem adiantar nem deslizar: a tela só se mexe pela tremida
   G.cam.x = clamp(p.x - cv.width/2, -MARGEM_FORA, Math.max(0, WORLD.w - cv.width) + MARGEM_FORA);
   G.cam.y = clamp(p.y - cv.height/2, -MARGEM_FORA, Math.max(0, WORLD.h - cv.height) + MARGEM_FORA);
 
@@ -2411,6 +2458,7 @@ function danoNoJogador(dano, autor) {
   p.hp -= noCasco;
 
   numeroDano(p.x, p.y - 24, "-" + fmt(dano), "#ff8a8a");
+  sacudir(3 + Math.min(7, dano / Math.max(1, maxHp()) * 90));   // a tela sente a pancada
   if (p.hp <= 0) morrerJogador(autor || p.ultimoAgressor);
 }
 
@@ -2766,6 +2814,89 @@ function viajar(idx) {
 }
 /* ===================== RENDER ===================== */
 
+/* ---- tremida da câmera ----
+   Um empurrãozinho curto quando você apanha ou algo explode perto. */
+let tremor = { forca: 0, ate: 0 };
+function sacudir(forca) {
+  tremor.forca = Math.max(tremor.forca, Math.min(forca, 16));
+  tremor.ate = Math.max(tremor.ate, (G ? G.tempo : 0) + 260);
+}
+function tremorAtual() {
+  if (!G || G.tempo >= tremor.ate || tremor.forca <= 0) { tremor.forca = 0; return { x:0, y:0 }; }
+  const k = clamp((tremor.ate - G.tempo) / 260, 0, 1);
+  const f = tremor.forca * k * k;
+  return { x: (Math.random()*2-1) * f, y: (Math.random()*2-1) * f };
+}
+
+/* Nebulosa e planeta, atrás de tudo, andando devagar por serem longe. */
+function desenharFundo(t, tre) {
+  if (planeta) {
+    const px = planeta.x - (G.cam.x + tre.x) * planeta.z;
+    const py = planeta.y - (G.cam.y + tre.y) * planeta.z;
+    if (px > -planeta.r*1.4 && py > -planeta.r*1.4 &&
+        px < cv.width + planeta.r*1.4 && py < cv.height + planeta.r*1.4) {
+      const gr = ctx.createRadialGradient(px - planeta.r*0.35, py - planeta.r*0.35, planeta.r*0.1,
+                                          px, py, planeta.r);
+      gr.addColorStop(0, planeta.cor2); gr.addColorStop(0.55, planeta.cor);
+      gr.addColorStop(1, "rgba(4,6,15,0)");
+      ctx.globalAlpha = 0.30; ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.arc(px, py, planeta.r, 0, 6.29); ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+  }
+  for (const n of nebulosa) {
+    const x = n.x - (G.cam.x + tre.x) * n.z, y = n.y - (G.cam.y + tre.y) * n.z;
+    if (x < -n.r || y < -n.r || x > cv.width + n.r || y > cv.height + n.r) continue;
+    const pulso = 1 + Math.sin(t/4200 + n.fase) * 0.06;
+    const gr = ctx.createRadialGradient(x, y, 0, x, y, n.r*pulso);
+    gr.addColorStop(0, n.cor); gr.addColorStop(1, "rgba(4,6,15,0)");
+    ctx.globalAlpha = n.a; ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(x, y, n.r*pulso, 0, 6.29); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* Um halo embaixo da nave, mais forte quando os motores estão acesos.
+   É o que faz ela parecer acesa em vez de recortada. */
+function luzDaNave(t) {
+  const p = G.player;
+  if (invisivel()) return;
+  const r = (G.nave === "tita" && spritePronto()) ? TITA_TAM * 0.78 : 46;
+  const forte = p.movendo ? 1 : 0.55;
+  const gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
+  gr.addColorStop(0, `rgba(255,190,130,${0.16*forte})`);
+  gr.addColorStop(0.45, `rgba(255,120,70,${0.09*forte})`);
+  gr.addColorStop(1, "rgba(255,90,50,0)");
+  ctx.fillStyle = gr;
+  ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.29); ctx.fill();
+
+  // um clarão atrás, no rumo dos motores
+  if (p.movendo) {
+    const tras = p.ang + Math.PI;
+    const bx = p.x + Math.cos(tras)*r*0.42, by = p.y + Math.sin(tras)*r*0.42;
+    const pulso = 0.8 + Math.sin(t/70)*0.2;
+    const g2 = ctx.createRadialGradient(bx, by, 0, bx, by, r*0.62*pulso);
+    g2.addColorStop(0, "rgba(255,220,170,.22)");
+    g2.addColorStop(1, "rgba(255,120,60,0)");
+    ctx.fillStyle = g2;
+    ctx.beginPath(); ctx.arc(bx, by, r*0.62*pulso, 0, 6.29); ctx.fill();
+  }
+}
+
+/* Escurece as bordas da tela e puxa o olho para o meio. */
+let vinheta = null, vinhetaTam = "";
+function desenharVinheta() {
+  const chave = cv.width + "x" + cv.height;
+  if (chave !== vinhetaTam) {
+    const g = ctx.createRadialGradient(cv.width/2, cv.height/2, Math.min(cv.width,cv.height)*0.34,
+                                       cv.width/2, cv.height/2, Math.max(cv.width,cv.height)*0.78);
+    g.addColorStop(0, "rgba(0,0,0,0)");
+    g.addColorStop(1, "rgba(0,0,0,.55)");
+    vinheta = g; vinhetaTam = chave;
+  }
+  ctx.fillStyle = vinheta; ctx.fillRect(0,0,cv.width,cv.height);
+}
+
 function desenhar(t) {
   ctx.clearRect(0,0,cv.width,cv.height);
   if (!G || !G.player) { ctx.fillStyle = "#04060f"; ctx.fillRect(0,0,cv.width,cv.height); return; }
@@ -2775,16 +2906,25 @@ function desenhar(t) {
   g.addColorStop(0, s.cor); g.addColorStop(1, "#04060f");
   ctx.fillStyle = g; ctx.fillRect(0,0,cv.width,cv.height);
 
+  const tre = tremorAtual();                   // deslocamento da tremida
+  desenharFundo(t, tre);
+
   for (const st of stars) {
-    const x = st.x - G.cam.x*st.z, y = st.y - G.cam.y*st.z;
+    const x = st.x - (G.cam.x + tre.x)*st.z, y = st.y - (G.cam.y + tre.y)*st.z;
     if (x < -10 || y < -10 || x > cv.width+10 || y > cv.height+10) continue;
-    ctx.globalAlpha = 0.25 + st.z*0.6; ctx.fillStyle = "#dff0ff";
+    const cintila = 0.72 + 0.28 * Math.sin(t/st.ritmo*6.28 + st.fase);
+    ctx.globalAlpha = (0.18 + st.z*0.62) * cintila;
+    ctx.fillStyle = st.cor;
     ctx.fillRect(x, y, st.r, st.r);
+    if (st.z > 0.8 && st.r > 1.6) {            // as maiores ganham um halo
+      ctx.globalAlpha *= 0.28;
+      ctx.beginPath(); ctx.arc(x + st.r/2, y + st.r/2, st.r*2.6, 0, 6.29); ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
 
   ctx.save();
-  ctx.translate(-G.cam.x, -G.cam.y);
+  ctx.translate(-G.cam.x - tre.x, -G.cam.y - tre.y);
 
   ctx.strokeStyle = "rgba(120,180,240,.05)"; ctx.lineWidth = 1;
   for (let x = 0; x <= WORLD.w; x += 400) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,WORLD.h); ctx.stroke(); }
@@ -2819,11 +2959,14 @@ function desenhar(t) {
 
   const p = G.player;
   for (const en of G.inimigos) desenharInimigo(en, t);
+  ctx.globalCompositeOperation = "lighter";     // os tiros acendem em vez de tapar
   for (const b of G.tiros) if (!(b.espera > 0)) desenharTiro(b, t);
+  ctx.globalCompositeOperation = "source-over";
 
   desenharDrones(t);
   desenharPet(t);
   desenharRastro();
+  if (!G.morto) luzDaNave(t);
   if (!G.morto) {
     ctx.globalAlpha = invisivel() ? 0.4 : 1;
     if (G.nave === "tita" && spritePronto()) desenharTita(p.x, p.y, p.ang, t);
@@ -2845,10 +2988,14 @@ function desenhar(t) {
     ctx.beginPath(); ctx.arc(p.dx,p.dy,7+Math.sin(t/150)*2,0,6.29); ctx.stroke();
   }
 
+  desenharPoeira();
+  ctx.globalCompositeOperation = "lighter";     // partículas somam luz
   for (const pa of G.particulas) {
-    ctx.globalAlpha = Math.max(0, pa.vida/pa.max);
+    ctx.globalAlpha = Math.max(0, pa.vida/pa.max) * 0.9;
     ctx.fillStyle = pa.cor; ctx.fillRect(pa.x, pa.y, pa.r, pa.r);
   }
+  desenharChoques();
+  ctx.globalCompositeOperation = "source-over";
   ctx.globalAlpha = 1;
 
   ctx.font = "800 20px system-ui"; ctx.textAlign = "center";
@@ -2865,6 +3012,7 @@ function desenhar(t) {
   ctx.globalAlpha = 1;
   ctx.restore();
 
+  desenharVinheta();
   desenharRadar();
   desenharAvisoFora(t);
 }
@@ -2923,9 +3071,11 @@ function desenharTiro(b, t) {
   ctx.strokeStyle = grad; ctx.lineWidth = larg;
   ctx.beginPath(); ctx.moveTo(-comp*2.2, 0); ctx.lineTo(0, 0); ctx.stroke();
 
-  // brilho
-  ctx.globalAlpha = .35; ctx.fillStyle = b.cor;
-  ctx.beginPath(); ctx.arc(0, 0, larg*2.6, 0, 6.29); ctx.fill();
+  // brilho: um halo macio em volta da ponta
+  const gl = ctx.createRadialGradient(0, 0, 0, 0, 0, larg*5.2);
+  gl.addColorStop(0, b.cor); gl.addColorStop(1, "rgba(0,0,0,0)");
+  ctx.globalAlpha = .55; ctx.fillStyle = gl;
+  ctx.beginPath(); ctx.arc(0, 0, larg*5.2, 0, 6.29); ctx.fill();
   ctx.globalAlpha = 1;
 
   // corpo
@@ -2982,7 +3132,7 @@ function chamaDoMotor(w, h, t) {
   const p = G.player;
   const v = p.movendo ? clamp(speedTotal() / 4, 0.25, 1) : 0;
   if (v <= 0) return;
-  const base = -w * 0.46;
+  const base = -w * 0.46;                      // saída dos bicos, vista de cima
   const comp = w * (0.20 + 0.34 * v) * (0.85 + Math.sin(t/45) * 0.15);
   const alt  = h * 0.20;
   const g = ctx.createLinearGradient(base, 0, base - comp, 0);
@@ -3014,10 +3164,11 @@ function desenharNave(x,y,ang,cor,tam) {
 
 /* ---------------------------------------------------------------------------
    SPRITE DA TITÃ
-   Sete quadros da mesma nave vista de cima, inclinada de −30° a +30° de 10 em
-   10 graus. O modelo 3D só serviu para gerar essas figuras aqui fora: o jogo
-   continua 2D e nunca carrega modelo nenhum. Se o arquivo não estiver do lado
-   do HTML, a nave volta sozinha para o desenho vetorial.
+   Vista de cima, que é a que combina com o resto do jogo. São sete quadros da
+   mesma nave, girando de −30° a +30° sobre o próprio eixo, que é o que faz ela
+   deitar na curva. O modelo 3D só
+   serviu para gerar essas figuras aqui fora: o jogo continua 2D e nunca carrega
+   modelo nenhum. Sem o arquivo ao lado do HTML, ela volta ao desenho vetorial.
    Modelo "Red Goliath Spaceship" de Harold.Llanos (Sketchfab), CC-BY-4.0.
 --------------------------------------------------------------------------- */
 const TITA_QUADROS = 7;
@@ -3471,11 +3622,27 @@ function desenharRadar() {
   ctx.beginPath(); ctx.arc(pxr, pyr, 5.5, 0, 6.29); ctx.stroke();
 }
 
+/* Anéis de choque das explosões, desenhados por cima das partículas. */
+let choques = [];
 function explosao(x,y,cor,n) {
+  const grande = n >= 20;
+  // miolo branco quente que apaga rápido
+  choques.push({ x, y, r0: n*0.5, r1: n*3.2, cor, t: G.tempo, dur: grande ? 620 : 380, larg: grande ? 5 : 3 });
+  if (grande) choques.push({ x, y, r0: 2, r1: n*1.5, cor:"#fff3d0", t: G.tempo, dur: 240, larg: 9 });
   for (let i = 0; i < n; i++) {
     const a = Math.random()*6.28, v = 1 + Math.random()*5;
     G.particulas.push({ x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v,
       r:1+Math.random()*3, cor, vida:500+Math.random()*600, max:1100 });
+  }
+  // estilhaços: mais rápidos, menores e mais claros
+  for (let i = 0; i < Math.round(n*0.45); i++) {
+    const a = Math.random()*6.28, v = 4 + Math.random()*7;
+    G.particulas.push({ x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v,
+      r:0.8+Math.random()*1.4, cor: i%3 ? "#ffd9a0" : "#fff", vida:260+Math.random()*420, max:700 });
+  }
+  if (G.player) {
+    const d = dist(x, y, G.player.x, G.player.y);
+    if (d < 900) sacudir((grande ? 9 : 4) * (1 - d/900));
   }
 }
 function faisca(x,y,cor) {
@@ -3484,6 +3651,53 @@ function faisca(x,y,cor) {
     G.particulas.push({ x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v,
       r:1+Math.random()*1.6, cor, vida:180+Math.random()*160, max:340 });
   }
+  choques.push({ x, y, r0: 1, r1: 16, cor, t: G.tempo, dur: 200, larg: 2 });
+}
+function desenharChoques() {
+  for (let i = choques.length-1; i >= 0; i--) {
+    const c = choques[i];
+    const k = (G.tempo - c.t) / c.dur;
+    if (k >= 1) { choques.splice(i,1); continue; }
+    ctx.globalAlpha = (1-k) * 0.85;
+    ctx.strokeStyle = c.cor;
+    ctx.lineWidth = c.larg * (1-k) + 0.6;
+    ctx.beginPath(); ctx.arc(c.x, c.y, c.r0 + (c.r1-c.r0)*k, 0, 6.29); ctx.stroke();
+  }
+  ctx.globalAlpha = 1; ctx.lineWidth = 1;
+}
+
+/* Poeira do espaço passando reto quando você acelera — é o que dá a
+   sensação de velocidade sem mexer em mais nada. */
+let poeira = [];
+function atualizarPoeira(dt) {
+  const p = G.player;
+  if (!p) return;
+  if (p.movendo && poeira.length < 46 && Math.random() < 0.55) {
+    const a = Math.random()*6.28, d = 240 + Math.random()*380;
+    poeira.push({ x: p.x + Math.cos(a)*d, y: p.y + Math.sin(a)*d,
+                  vida: 900, max: 900, r: 0.6 + Math.random()*1.3 });
+  }
+  const v = speedTotal() * 2.1;
+  const tras = p.ang + Math.PI;
+  for (let i = poeira.length-1; i >= 0; i--) {
+    const q = poeira[i];
+    if (p.movendo) { q.x += Math.cos(tras)*v*dt/16; q.y += Math.sin(tras)*v*dt/16; }
+    q.vida -= dt;
+    if (q.vida <= 0 || dist(q.x,q.y,p.x,p.y) > 900) poeira.splice(i,1);
+  }
+}
+function desenharPoeira() {
+  const p = G.player;
+  if (!p || !p.movendo || !poeira.length) return;
+  const v = speedTotal() * 2.1, tras = p.ang + Math.PI;
+  ctx.strokeStyle = "rgba(200,225,255,.5)"; ctx.lineWidth = 1;
+  ctx.beginPath();
+  for (const q of poeira) {
+    const k = Math.min(1, q.vida/300);
+    ctx.moveTo(q.x, q.y);
+    ctx.lineTo(q.x + Math.cos(tras)*v*2.2*k, q.y + Math.sin(tras)*v*2.2*k);
+  }
+  ctx.stroke();
 }
 /* ===================== HUD ===================== */
 
@@ -5323,7 +5537,8 @@ function openHelp() {
     <div class="row"><div class="val">Minimapa</div><div class="muted">clique (ou clique e arraste) no minimapa para viajar até aquele ponto</div></div>
     <div class="row"><div class="val">Morte</div><div class="muted">a tela escurece e mostra quem te abateu: 500 cr para ser resgatado até a base, chegando com casco e escudo zerados e recuperando na doca, ou 1.000 cr para reviver no lugar com metade do casco e metade do escudo da configuração ativa, intocável por 3s</div></div>
     <div class="row"><div class="val">Hangar</div><div class="muted">começa com 1 espaço. No painel Equipamentos, o quadrado com <b>+</b> compra mais um espaço, até 5. Comprando uma nave com o hangar lotado, o jogo pede confirmação e depois mostra as suas naves para você escolher qual sai. Nave repetida não entra</div></div>
-    <div class="row"><div class="val">Visual da Titã</div><div class="muted">a Titã usa uma figura pronta em vez do desenho vetorial: sete quadros da mesma nave vista de cima, de −30° a +30°. Ela deita para o lado enquanto você faz a curva, solta chama pelos motores conforme a velocidade, deixa uma esteira ao acelerar, respira de leve quando está parada e acende quando o escudo apanha. Se o arquivo <b>nave-tita.png</b> não estiver na mesma pasta do jogo, ela volta sozinha para o desenho antigo</div></div>
+    <div class="row"><div class="val">Visual da Titã</div><div class="muted">a Titã usa uma figura pronta em vez do desenho vetorial: sete quadros da mesma nave vista de cima, girando de −30° a +30° sobre o próprio eixo. Ela deita para o lado enquanto você faz a curva, solta chama pelos motores conforme a velocidade, deixa uma esteira ao acelerar, respira de leve quando está parada e acende quando o escudo apanha. Se o arquivo <b>nave-tita.png</b> não estiver na mesma pasta do jogo, ela volta sozinha para o desenho antigo</div></div>
+    <div class="row"><div class="val">Efeitos visuais</div><div class="muted">o fundo tem nebulosa e estrelas em várias profundidades, que andam em velocidades diferentes, mais um corpo distante por setor. A nave espalha luz em volta e acende os motores; os tiros somam brilho em vez de tapar o fundo. Explosões soltam estilhaços e anéis de choque, e a tela treme conforme a distância do estouro e o tamanho da pancada que você levou. Acelerando, riscos de poeira passam para trás dando a sensação de velocidade. A câmera fica presa na nave: ela só se mexe na tremida</div></div>
     <div class="row"><div class="val">Créditos</div><div class="muted">a figura da Titã foi gerada a partir do modelo <b>Red Goliath Spaceship</b>, de Harold.Llanos no Sketchfab, sob licença CC-BY-4.0</div></div>
     <div class="foot"><button onclick="fecharModal()">Entendi</button></div>`);
 }
