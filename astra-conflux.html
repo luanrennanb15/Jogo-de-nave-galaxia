@@ -1415,7 +1415,9 @@ function spawnCaixa() {
    trás são pequenas e paradas; as da frente andam mais e brilham mais. */
 function gerarEstrelas() {
   stars = [];
-  for (let i = 0; i < 620; i++) {
+  // menos estrelas em código: a maior parte agora vem da textura de poeira,
+  // estas ficam só para piscar por cima
+  for (let i = 0; i < 220; i++) {
     const z = 0.12 + Math.pow(Math.random(), 1.7) * 0.85;
     stars.push({
       x: Math.random()*WORLD.w, y: Math.random()*WORLD.h, z,
@@ -1428,39 +1430,68 @@ function gerarEstrelas() {
   gerarNebulosa();
 }
 
-/* Nebulosa: manchas grandes e macias, em camadas de profundidade diferente.
-   Elas é que tiram o fundo daquele azul chapado. */
-let nebulosa = [];
+/* ---------------------------------------------------------------------------
+   FUNDO PINTADO
+   Duas texturas em tons de cinza que emendam sem costura: uma de nebulosa e
+   uma de poeira com estrelas de campo. Elas são tingidas na cor do setor e
+   repetidas em camadas de profundidades diferentes — é isso que dá identidade
+   visual a cada setor em vez do degradê chapado.
+--------------------------------------------------------------------------- */
+const texNebulosa = new Image(); texNebulosa.src = "fundo-nebulosa.png";
+const texPoeira   = new Image(); texPoeira.src   = "fundo-poeira.png";
+
+/* Cada setor tem a sua paleta: duas cores de nuvem e o tom da poeira. */
+const PALETA_SETOR = [
+  { a:"#2f5aa8", b:"#6a3d9a", p:"#cfe2ff", planeta:"#3a6fd8" },  // 1 — azul frio
+  { a:"#1f7a8c", b:"#2f4f9a", p:"#d4f0ff", planeta:"#2aa0b0" },  // 2 — turquesa
+  { a:"#8a4a1f", b:"#7a2f4a", p:"#ffe0c0", planeta:"#c07030" },  // 3 — âmbar
+  { a:"#6a2a7a", b:"#2a2a8a", p:"#efd8ff", planeta:"#8a3ac0" },  // 4 — violeta
+  { a:"#8f2f2f", b:"#5a1f6a", p:"#ffd0d0", planeta:"#c03a3a" },  // 5 — brasa
+  { a:"#1f6b57", b:"#12406a", p:"#d0ffe8", planeta:"#1f9a78" },  // 6 — esmeralda
+];
+const paletaAtual = () => PALETA_SETOR[G.setor % PALETA_SETOR.length];
+
+/* Tingir custa caro, então cada combinação textura+cor é pintada uma vez
+   num canvas escondido e reaproveitada em todos os quadros. */
+const tintas = {};
+function tingir(img, cor) {
+  const chave = img.src + "|" + cor;
+  if (tintas[chave]) return tintas[chave];
+  if (!img.complete || !img.naturalWidth) return null;
+  const c = document.createElement("canvas");
+  c.width = img.naturalWidth; c.height = img.naturalHeight;
+  const x = c.getContext("2d");
+  x.drawImage(img, 0, 0);
+  x.globalCompositeOperation = "source-in";
+  x.fillStyle = cor; x.fillRect(0, 0, c.width, c.height);
+  tintas[chave] = c;
+  return c;
+}
+
+/* Repete a textura cobrindo a tela, deslocada conforme a profundidade. */
+function camadaFundo(img, cor, z, alfa, escala, tre) {
+  const t = tingir(img, cor);
+  if (!t) return;
+  const w = t.width * escala, h = t.height * escala;
+  let ox = -(((G.cam.x + tre.x) * z) % w); if (ox > 0) ox -= w;
+  let oy = -(((G.cam.y + tre.y) * z) % h); if (oy > 0) oy -= h;
+  ctx.globalAlpha = alfa;
+  for (let x = ox; x < cv.width; x += w)
+    for (let y = oy; y < cv.height; y += h)
+      ctx.drawImage(t, x, y, w, h);
+  ctx.globalAlpha = 1;
+}
+
+let planeta = null;
 function gerarNebulosa() {
-  const s = sectorData();
-  const tons = NEBULA_TONS[G.setor % NEBULA_TONS.length];
-  nebulosa = [];
-  for (let i = 0; i < 11; i++) {
-    nebulosa.push({
-      x: Math.random()*WORLD.w, y: Math.random()*WORLD.h,
-      r: 340 + Math.random()*620,
-      z: 0.06 + Math.random()*0.20,
-      cor: tons[Math.floor(Math.random()*tons.length)],
-      a: 0.05 + Math.random()*0.09,
-      fase: Math.random()*6.28,
-    });
-  }
+  const pal = paletaAtual();
   // um corpo distante, quase parado, só para o setor ter um ponto de referência
   planeta = {
     x: Math.random()*WORLD.w, y: Math.random()*WORLD.h,
-    r: 120 + Math.random()*130, z: 0.045,
-    cor: tons[0], cor2: s.cor,
+    r: 130 + Math.random()*140, z: 0.045,
+    cor: pal.planeta, cor2: sectorData().cor,
   };
 }
-let planeta = null;
-const NEBULA_TONS = [
-  ["#2a4d8f", "#6a3d9a", "#1f7a8c"],
-  ["#7a2f4a", "#8f5a2a", "#3a2f7a"],
-  ["#1f6b57", "#2a4d8f", "#5a7a2a"],
-  ["#6a2a6a", "#2a2a7a", "#8f3a3a"],
-  ["#8f4a1f", "#7a2f2f", "#4a2a6a"],
-  ["#1a3a5a", "#4a1a5a", "#0f5a4a"],
-];
 
 /* ---------- MISSÕES ---------- */
 function gerarOferta() {
@@ -2844,16 +2875,12 @@ function desenharFundo(t, tre) {
       ctx.globalAlpha = 1;
     }
   }
-  for (const n of nebulosa) {
-    const x = n.x - (G.cam.x + tre.x) * n.z, y = n.y - (G.cam.y + tre.y) * n.z;
-    if (x < -n.r || y < -n.r || x > cv.width + n.r || y > cv.height + n.r) continue;
-    const pulso = 1 + Math.sin(t/4200 + n.fase) * 0.06;
-    const gr = ctx.createRadialGradient(x, y, 0, x, y, n.r*pulso);
-    gr.addColorStop(0, n.cor); gr.addColorStop(1, "rgba(4,6,15,0)");
-    ctx.globalAlpha = n.a; ctx.fillStyle = gr;
-    ctx.beginPath(); ctx.arc(x, y, n.r*pulso, 0, 6.29); ctx.fill();
-  }
-  ctx.globalAlpha = 1;
+  /* Três camadas: a nebulosa grande e lenta lá no fundo, uma segunda menor e
+     de outra cor por cima, e a poeira com as estrelas de campo na frente. */
+  const pal = paletaAtual();
+  camadaFundo(texNebulosa, pal.a, 0.055, 0.50, 2.4, tre);
+  camadaFundo(texNebulosa, pal.b, 0.105, 0.34, 1.5, tre);
+  camadaFundo(texPoeira,   pal.p, 0.170, 0.42, 1.2, tre);
 }
 
 /* Um halo embaixo da nave, mais forte quando os motores estão acesos.
