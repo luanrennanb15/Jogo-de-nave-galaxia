@@ -207,9 +207,11 @@
   .zonaInv { min-height: 120px; }
   .zonaInv.alvo { outline: 1px dashed #8affd8; outline-offset: 4px; border-radius: 8px; }
   .zonaVenda { margin-top: 12px; padding: 12px 10px; border-radius: 9px; text-align: center;
-               font-size: 11px; border: 1px solid rgba(255,140,140,.7);
-               background: #3a1620; box-shadow: 0 -6px 18px rgba(0,0,0,.45);
-               position: sticky; bottom: 0; }
+               font-size: 12px; font-weight: 700; letter-spacing: .1em; cursor: pointer;
+               color: #fff; border: 1px solid #ff6b6b; background: #a32432;
+               box-shadow: 0 -6px 18px rgba(0,0,0,.45); position: sticky; bottom: 0;
+               transition: .15s; }
+  .zonaVenda:hover { background: #c92c3d; border-color: #ff9a9a; }
   .tabs { display: flex; gap: 5px; margin-bottom: 12px; flex-wrap: wrap; }
   .row { display: flex; justify-content: space-between; align-items: center; gap: 10px;
          padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,.07); font-size: 12px; }
@@ -525,10 +527,26 @@ const DRONE_MAX = 8;
 const DRONE_NIVEL_MAX = 5;
 const DRONE_ABATES = [0, 50, 150, 350, 700];   // abates para os níveis 1..5
 const DRONE_TIPOS = {
-  android: { nome: "Android Demo", slots: 1, preco: 45000,  cor: "#7ee8ff" },
-  inovat:  { nome: "Inovat",       slots: 2, preco: 130000, cor: "#ffd166" },
+  android:  { nome: "Android Demo", slots: 1, preco: 45000,   cor: "#7ee8ff" },
+  inovat:   { nome: "Inovat",       slots: 2, preco: 130000,  cor: "#ffd166" },
+  /* Únicos: um de cada, e voam fixos nas laterais da nave */
+  hercules: { nome: "Hercules",     slots: 2, preco: 3000000, cor: "#ff5a5a", unico: true, lado: -1 },
+  zeus:     { nome: "Zeus",         slots: 2, preco: 3000000, cor: "#4cc9ff", unico: true, lado:  1 },
 };
-const droneCusto = (tipo, n) => Math.round(DRONE_TIPOS[tipo].preco * Math.pow(n + 1, 1.35));
+/* os únicos voam ao lado da nave, um pouco atrás da coluna dos comuns */
+const POS_LATERAL = { "-1": { fx: -34, fy: -132 }, "1": { fx: -34, fy: 132 } };
+/* O limite de 8 vale só para os drones comuns. Hercules e Zeus são únicos,
+   um de cada, e ficam por fora — com todos comprados a frota chega a 10. */
+const DRONE_UNICOS = Object.keys(DRONE_TIPOS).filter(k => DRONE_TIPOS[k].unico);
+const DRONE_TOTAL_MAX = DRONE_MAX + DRONE_UNICOS.length;
+const ehUnico  = tipo => !!(DRONE_TIPOS[tipo] && DRONE_TIPOS[tipo].unico);
+const nComuns  = () => G.drones.filter(d => !ehUnico(d.tipo)).length;
+const temUnico = tipo => G.drones.some(d => d.tipo === tipo);
+
+/* o preço dos comuns sobe conforme a frota comum cresce; os únicos têm preço fixo */
+const droneCusto = (tipo, n) => ehUnico(tipo)
+  ? DRONE_TIPOS[tipo].preco
+  : Math.round(DRONE_TIPOS[tipo].preco * Math.pow(n + 1, 1.35));
 
 /* Formação desenhada pelo jogador (nave apontando para a direita):
 
@@ -541,25 +559,43 @@ const droneCusto = (tipo, n) => Math.round(DRONE_TIPOS[tipo].preco * Math.pow(n 
    Coordenadas locais: fx = frente(+)/trás(−), fy = direita(+)/esquerda(−).
    Com menos de 8 drones as posições são um subconjunto simétrico dessa mesma
    figura, para a formação nunca ficar torta. */
+/* Formação dos drones comuns, do desenho do jogador (nave apontando à direita):
+
+        .................-
+        .....-...........-
+        -.......-........*
+        .....-...........-
+        .................-
+
+   Uma coluna de quatro ao lado da nave, um par recuado no meio, um logo
+   atrás e outro bem mais atrás. Com menos drones, usa um subconjunto
+   simétrico da mesma figura. */
+/* O grupo de trás é uma cruz perfeita: quatro drones à mesma distância de um
+   centro, um em cada direção. A coluna lateral fica bem aberta nos dois lados. */
+const CRUZ_CENTRO = -160;   // onde fica o meio da cruz, atrás da nave
+const CRUZ_BRACO  = 52;     // distância igual dos quatro braços
+const COLUNA_INT  = 106;    // par interno da coluna lateral
+const COLUNA_EXT  = 168;    // par externo (mesmo vão de 62 entre os pares)
+
 const P = {
-  atras1: { fx: -48, fy:   0 },   // logo atrás da nave
-  atras2: { fx: -92, fy:   0 },   // mais atrás ainda
-  ladoA:  { fx:   0, fy: -40 },   // coluna ao lado da nave
-  ladoB:  { fx:   0, fy:  40 },
-  ladoC:  { fx:   0, fy: -74 },   // pontas da coluna
-  ladoD:  { fx:   0, fy:  74 },
-  meioA:  { fx: -60, fy: -40 },   // par intermediário, recuado
-  meioB:  { fx: -60, fy:  40 },
+  cruzF: { fx: CRUZ_CENTRO + CRUZ_BRACO, fy: 0 },
+  cruzT: { fx: CRUZ_CENTRO - CRUZ_BRACO, fy: 0 },
+  cruzA: { fx: CRUZ_CENTRO, fy: -CRUZ_BRACO },
+  cruzB: { fx: CRUZ_CENTRO, fy:  CRUZ_BRACO },
+  ladoA: { fx: 0, fy: -COLUNA_INT },
+  ladoB: { fx: 0, fy:  COLUNA_INT },
+  ladoC: { fx: 0, fy: -COLUNA_EXT },
+  ladoD: { fx: 0, fy:  COLUNA_EXT },
 };
 const FORMACOES = {
-  1: [P.atras1],
+  1: [P.cruzF],
   2: [P.ladoA, P.ladoB],
-  3: [P.atras1, P.ladoA, P.ladoB],
-  4: [P.atras1, P.atras2, P.ladoA, P.ladoB],
-  5: [P.atras1, P.atras2, P.ladoA, P.ladoB, P.ladoC],
-  6: [P.atras1, P.atras2, P.ladoA, P.ladoB, P.ladoC, P.ladoD],
-  7: [P.atras1, P.atras2, P.ladoA, P.ladoB, P.ladoC, P.ladoD, P.meioA],
-  8: [P.atras1, P.atras2, P.ladoA, P.ladoB, P.ladoC, P.ladoD, P.meioA, P.meioB],
+  3: [P.cruzF, P.ladoA, P.ladoB],
+  4: [P.cruzF, P.cruzT, P.cruzA, P.cruzB],                       // a cruz completa
+  5: [P.cruzF, P.cruzT, P.cruzA, P.cruzB, P.ladoA],
+  6: [P.cruzF, P.cruzT, P.cruzA, P.cruzB, P.ladoA, P.ladoB],
+  7: [P.cruzF, P.cruzT, P.cruzA, P.cruzB, P.ladoA, P.ladoB, P.ladoC],
+  8: [P.cruzF, P.cruzT, P.cruzA, P.cruzB, P.ladoA, P.ladoB, P.ladoC, P.ladoD],
 };
 const formacaoAtual = n => FORMACOES[clamp(n, 1, DRONE_MAX)] || FORMACOES[DRONE_MAX];
 
@@ -2404,9 +2440,20 @@ function desenharDrones(t) {
   const p = G.player;
   if (!G.drones.length) { dronePos.length = 0; return; }
   const cos = Math.cos(p.ang), sin = Math.sin(p.ang);
-  const forma = formacaoAtual(G.drones.length);
-  for (let i = 0; i < G.drones.length && i < forma.length; i++) {
-    const f = forma[i];
+
+  // Hercules e Zeus têm lugar fixo nas laterais; o resto forma atrás
+  const alvos = new Array(G.drones.length);
+  const comuns = [];
+  G.drones.forEach((d,i) => {
+    const dt = DRONE_TIPOS[d.tipo];
+    if (dt && dt.lado) alvos[i] = POS_LATERAL[dt.lado];
+    else comuns.push(i);
+  });
+  const forma = formacaoAtual(comuns.length);
+  comuns.forEach((idx,k) => alvos[idx] = forma[k]);
+
+  for (let i = 0; i < G.drones.length; i++) {
+    const f = alvos[i]; if (!f) continue;
     const tx = p.x + f.fx*cos - f.fy*sin;
     const ty = p.y + f.fx*sin + f.fy*cos;
     if (!dronePos[i]) dronePos[i] = { x: tx, y: ty };
@@ -2419,7 +2466,7 @@ function desenharDrones(t) {
 
 function desenharDrone(x, y, ang, d) {
   const dt = DRONE_TIPOS[d.tipo], nv = droneNivel(d);
-  const r = (d.tipo === "inovat" ? 7.5 : 6) + nv * 0.35;
+  const r = (dt.unico ? 9 : d.tipo === "inovat" ? 7.5 : 6) + nv * 0.35;
   ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
 
   ctx.globalAlpha = .22; ctx.fillStyle = dt.cor;
@@ -2427,7 +2474,10 @@ function desenharDrone(x, y, ang, d) {
   ctx.globalAlpha = 1;
 
   ctx.beginPath();
-  if (d.tipo === "inovat") {
+  if (dt.unico) {                                  // Hercules e Zeus: losango alongado
+    ctx.moveTo(r*1.3, 0); ctx.lineTo(0, r*0.8);
+    ctx.lineTo(-r*1.1, 0); ctx.lineTo(0, -r*0.8);
+  } else if (d.tipo === "inovat") {
     for (let i = 0; i < 6; i++) {
       const a = (i/6)*6.283;
       if (i) ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r); else ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r);
@@ -3149,9 +3199,10 @@ function colLoja() {
   h += secaoLoja("Foguetes", ROCKET_ORDER.map(k =>
     quadradoLoja("foguete", k, ROCKETS[k].nome, fmt(ROCKETS[k].preco) + " cr")).join(""));
 
-  const nd = G.drones.length;
-  h += secaoLoja(`Drones — ${nd}/${DRONE_MAX} acoplados`, Object.entries(DRONE_TIPOS).map(([k,dt]) =>
-    quadradoLoja("drone", k, dt.nome, fmt(droneCusto(k, nd)) + " cr", dt.cor)).join(""));
+  const nc = nComuns(), nu = G.drones.length - nc;
+  h += secaoLoja(`Drones — ${nc}/${DRONE_MAX} comuns e ${nu}/${DRONE_UNICOS.length} únicos`,
+    Object.entries(DRONE_TIPOS).map(([k,dt]) =>
+      quadradoLoja("drone", k, dt.nome, fmt(droneCusto(k, nc)) + " cr", dt.cor)).join(""));
 
   h += secaoLoja("Melhorias permanentes", UPGRADES.map(u =>
     quadradoLoja("up", u.id, u.nome, `nv ${G.up[u.id]}/${u.max}`)).join(""));
@@ -3249,13 +3300,18 @@ function detalheLoja() {
   }
 
   else if (cat === "drone") {
-    const dt = DRONE_TIPOS[id], nd = G.drones.length, custo = droneCusto(id, nd);
+    const dt = DRONE_TIPOS[id], nc = nComuns(), custo = droneCusto(id, nc);
+    const jaTem = dt.unico && temUnico(id);
     nome = dt.nome; cor = dt.cor;
-    desc = `Voa em formação com a nave e carrega equipamento próprio. Sobe de nível abatendo inimigos: cada canhão montado nele dá +1% de dano por nível, cada escudo dá +2% de escudo por nível.`;
+    desc = `Voa em formação com a nave e carrega equipamento próprio. Sobe de nível abatendo inimigos: cada canhão montado nele dá +1% de dano por nível, cada escudo dá +2% de escudo por nível.`
+         + (dt.lado ? ` Voa fixo ${dt.lado < 0 ? "à esquerda" : "à direita"} da nave, só pode haver um e ele não ocupa vaga dos comuns.` : "");
     info = linha("Encaixes do drone", dt.slots) + linha("Nível inicial", "1 de " + DRONE_NIVEL_MAX) +
-           linha("Acoplados", `${nd} de ${DRONE_MAX}`);
-    acoes = nd >= DRONE_MAX ? `<span class="tag warn">limite de drones atingido</span>`
-                            : botaoCompra(custo, `comprarDrone('${id}')`, "Comprar drone");
+           (dt.unico ? linha("Limite", "um por frota, fora das 8 vagas")
+                     : linha("Vagas comuns", `${nc} de ${DRONE_MAX}`)) +
+           linha("Frota", `${G.drones.length} de ${DRONE_TOTAL_MAX}`);
+    acoes = jaTem ? `<span class="tag ok">você já tem o ${dt.nome}</span>`
+          : (!dt.unico && nc >= DRONE_MAX) ? `<span class="tag warn">limite de drones atingido</span>`
+          : botaoCompra(custo, `comprarDrone('${id}')`, "Comprar drone");
   }
 
   else if (cat === "up") {
@@ -3310,14 +3366,13 @@ function quadrado(id, destino, rotulo) {
   const dest = JSON.stringify(destino).replace(/"/g, "'");
   const tirar = destino.k === "nave" ? `tirarDaNave('${destino.cat}',${destino.i})`
                                      : `tirarDoDrone(${destino.di},${destino.si})`;
-  const on = id && invSel && invSel.id === id;
-  return `<div class="slot ${id ? "cheio" : ""} ${on ? "sel" : ""}"
+  return `<div class="slot ${id ? "cheio" : ""}"
     ${id ? `draggable="true" ondragstart="pegar(${dest})"` : ""}
     ondragover="event.preventDefault(); this.classList.add('alvo')"
     ondragleave="this.classList.remove('alvo')"
     ondrop="this.classList.remove('alvo'); soltarEm(${dest})"
-    ${id ? `onclick="selecionarItem('${t}','${id}')" ondblclick="${tirar}"` : ""}
-    title="${id ? "Um clique abre a venda, dois cliques tiram, ou arraste" : "Arraste um item aqui"}">
+    ${id ? `ondblclick="${tirar}"` : ""}
+    title="${id ? "Arraste para mover, ou dê dois cliques para tirar" : "Arraste um item aqui"}">
     ${id ? `<b>${it.nome}</b><span>${textoItem(t, id)}</span>` : `<span>vazio</span>`}
     ${rotulo ? `<span style="opacity:.6">${rotulo}</span>` : ""}
   </div>`;
@@ -3407,43 +3462,61 @@ function colDrones() {
 
 /* coluna da direita: o depósito */
 /* um quadrado do depósito representa UMA unidade solta do item */
-let invSel = null;   // item destacado, no depósito ou já montado
+const TITULO_SEC = { laser:"Canhões", lancador:"Lança-mísseis", escudo:"Escudos",
+                     motor:"Motores", modulo:"Módulos" };
 
-function selecionarItem(t, id) {
-  invSel = (invSel && invSel.t === t && invSel.id === id) ? null : { t, id };
-  renderEquip();
-}
-
-/* Solta uma unidade que está montada, para poder vendê-la.
-   Como as duas configurações dividem a peça, tira de ambas até liberar. */
-function liberarUm(t, id) {
-  if (livres(t,id) > 0) return true;
-  for (const cfg of ((G.naveCfg && G.naveCfg[G.nave]) || [])) {
-    if (livres(t,id) > 0) break;
-    for (const cat of CATS) {
-      const i = ((cfg && cfg[cat]) || []).indexOf(id);
-      if (i >= 0) { cfg[cat][i] = null; break; }
-    }
-  }
-  for (const d of G.drones) {
-    if (livres(t,id) > 0) break;
-    for (const arr of (d.cfgs || [])) {
-      const i = arr.indexOf(id);
-      if (i >= 0) { arr[i] = null; break; }
-    }
-  }
-  return livres(t,id) > 0;
-}
-
-function venderSelecionado() {
-  if (!invSel) return;
+/* Venda em tela própria, sempre com confirmação. */
+function abrirVenda() {
   if (!exigeBase()) return;
-  const { t, id } = invSel;
-  if (livres(t,id) <= 0 && !liberarUm(t,id)) { toast("Não foi possível liberar essa peça"); return; }
-  normalizarEquip();
-  venderItem(t, id);
-  if (possui(t,id) <= 0) invSel = null;
-  renderEquip();
+  let corpo = "";
+  for (const t of ["laser","lancador","escudo","motor","modulo"]) {
+    const its = Object.entries(ITEMS[t]).filter(([id]) => possui(t,id) > 0);
+    if (!its.length) continue;
+    corpo += `<div class="lbl" style="margin-top:12px">${TITULO_SEC[t]}</div>`;
+    corpo += its.map(([id,it]) => {
+      const l = livres(t,id), v = Math.round(it.preco*0.5);
+      return `<div class="row">
+        <div><div class="val">${it.nome} <span class="muted">${textoItem(t,id)}</span></div>
+          <div class="muted">${possui(t,id)} no total · ${l} sem uso · ${fmt(v)} cr cada</div></div>
+        <div style="text-align:right">
+          <button class="mini danger" ${l ? "" : "disabled"}
+            onclick="confirmarVenda('${t}','${id}',1)">Vender 1</button>
+          <button class="mini danger" ${l > 1 ? "" : "disabled"}
+            onclick="confirmarVenda('${t}','${id}',${l})">Vender ${l}</button>
+        </div></div>`;
+    }).join("");
+  }
+  abrirModal(`<h1 style="font-size:17px">VENDER ITENS</h1>
+    <p class="sub">Aparecem aqui todos os equipamentos que você tem. Só é possível vender
+      o que não está montado na nave nem nos drones. Cada peça sai por metade do preço de compra.</p>
+    ${corpo || `<div class="muted">Você não tem nenhum equipamento no depósito.</div>`}
+    <div class="foot"><button onclick="renderEquip()">Voltar</button></div>`);
+}
+
+function confirmarVenda(t, id, q) {
+  const it = ITEMS[t][id], v = Math.round(it.preco*0.5) * q;
+  abrirModal(`<h1 style="font-size:17px">DESEJA MESMO VENDER?</h1>
+    <p class="sub">Você vai vender <b>${q}× ${it.nome}</b> e receber
+      <span class="credits">${fmt(v)} cr</span>. Não dá para desfazer.</p>
+    <div class="foot">
+      <button onclick="abrirVenda()">Não, voltar</button>
+      <button class="danger" onclick="venderConfirmado('${t}','${id}',${q})">Sim, vender</button>
+    </div>`);
+}
+
+function venderConfirmado(t, id, q) {
+  if (!exigeBase()) return;
+  let n = 0;
+  for (let i = 0; i < q; i++) {
+    if (livres(t,id) <= 0) break;
+    G.inv[t][id]--; n++;
+  }
+  if (n) {
+    G.creditos += Math.round(ITEMS[t][id].preco*0.5) * n;
+    toast(n + "× " + ITEMS[t][id].nome + " vendido");
+    logar("Vendeu " + n + "× " + ITEMS[t][id].nome + ".");
+  }
+  abrirVenda();
 }
 
 function quadradoInv(t, id, ctx) {
@@ -3452,11 +3525,9 @@ function quadradoInv(t, id, ctx) {
   const dica = t === "modulo" ? it.desc : textoItem(t, id);
   const destino = ctx === "drones" ? "mandarParaDrone" : "mandarParaNave";
   const alvo = ctx === "drones" ? "no primeiro encaixe livre dos drones" : "no primeiro encaixe livre da nave";
-  const on = invSel && invSel.t === t && invSel.id === id;
-  return `<div class="slot cheio ${on ? "sel" : ""}" draggable="true" ondragstart="pegar(${org})"
-    onclick="selecionarItem('${t}','${id}')"
+  return `<div class="slot cheio" draggable="true" ondragstart="pegar(${org})"
     ondblclick="${destino}('${t}','${id}')"
-    title="${it.nome} — ${dica}. Um clique mostra a venda, dois cliques montam ${alvo}.">
+    title="${it.nome} — ${dica}. Arraste para um encaixe ou dê dois cliques para montar ${alvo}.">
     <b>${it.nome}</b><span>${textoItem(t, id)}</span></div>`;
 }
 
@@ -3507,32 +3578,11 @@ function colItens(ctx) {
   }
   if (!total) h += `<div class="muted" style="margin-top:6px">Tudo o que você tem está montado. Compre mais na Loja.</div>`;
 
-  // painel de venda do item destacado
-  let venda = "";
-  if (invSel && ITEMS[invSel.t] && ITEMS[invSel.t][invSel.id]) {
-    const it = ITEMS[invSel.t][invSel.id];
-    const l = livres(invSel.t, invSel.id);
-    const tem = possui(invSel.t, invSel.id);
-    const valor = Math.round(it.preco * 0.5);
-    venda = `<div class="zonaVenda">
-      <div class="val" style="margin-bottom:4px">${it.nome}</div>
-      <div class="muted" style="margin-bottom:8px">${invSel.t === "modulo" ? it.desc : textoItem(invSel.t, invSel.id)}
-        · ${tem} no total, ${l} sem uso</div>
-      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
-        <button class="danger" ${tem > 0 ? "" : "disabled"} onclick="venderSelecionado()">
-          ${l > 0 ? "Vender 1 por " + fmt(valor) + " cr"
-                  : "Desmontar e vender por " + fmt(valor) + " cr"}</button>
-        <button class="mini" onclick="invSel=null;renderEquip()">Fechar</button>
-      </div>
-      ${l > 0 ? "" : `<div class="muted" style="margin-top:6px">Todas estão montadas — a venda tira uma da nave.</div>`}
-    </div>`;
-  }
-
-  return `<div class="lbl">Depósito — clique para vender, dois cliques para montar</div>
+  return `<div class="lbl">Depósito — arraste ou dê dois cliques para montar</div>
     <div class="zonaInv" ondragover="event.preventDefault(); this.classList.add('alvo')"
       ondragleave="this.classList.remove('alvo')"
       ondrop="this.classList.remove('alvo'); soltarEm({k:'inv'})">${h}</div>
-    ${venda}`;
+    <div class="zonaVenda" onclick="abrirVenda()">VENDER ITENS</div>`;
 }
 
 function renderEquip() {
@@ -3723,12 +3773,6 @@ function comprarItem(t, id, q) {
   G.creditos -= custo;
   G.inv[t][id] = (G.inv[t][id] || 0) + qtd;
   toast(qtd + "× " + it.nome + " — equipe no painel Equipamentos");
-  renderBase();
-}
-function venderItem(t,id) {
-  if (!exigeBase()) return;
-  if (livres(t,id) <= 0) return;
-  G.inv[t][id]--; G.creditos += Math.round(ITEMS[t][id].preco*0.5);
   renderBase();
 }
 function equipar(t,id) {
@@ -3925,8 +3969,16 @@ function resumoDrone(d) {
 }
 
 function comprarDrone(tipo) {
-  const n = G.drones.length, c = droneCusto(tipo, n);
-  if (n >= DRONE_MAX || G.creditos < c || !DRONE_TIPOS[tipo]) return;
+  const dt = DRONE_TIPOS[tipo];
+  if (!dt) return;
+  if (dt.unico && temUnico(tipo)) {
+    toast("Só é possível ter um " + dt.nome); return;
+  }
+  const nc = nComuns(), c = droneCusto(tipo, nc);
+  if (!dt.unico && nc >= DRONE_MAX) {          // únicos não disputam as 8 vagas
+    toast(`Limite de ${DRONE_MAX} drones comuns atingido`); return;
+  }
+  if (G.creditos < c) return;
   G.creditos -= c;
   G.drones.push({ tipo, abates: 0, cfgs: [[], []], itens: [] });
   normalizarDrones();
@@ -4225,13 +4277,22 @@ function aplicarSave(d) {
     for (let i = 0; i < q; i++) G.drones.push({ tipo:"android", abates:0, cfgs:[[],[]] });
   }
   if (!Array.isArray(G.drones)) G.drones = [];
-  G.drones = G.drones.slice(0, DRONE_MAX).map(d => ({
+  // 8 vagas para os comuns; os únicos entram por fora, no máximo um de cada
+  const vistos = new Set();
+  let vagas = DRONE_MAX;
+  G.drones = G.drones.map(d => ({
     tipo: DRONE_TIPOS[d && d.tipo] ? d.tipo : "android",
     abates: (d && d.abates) || 0,
     cfgs: Array.isArray(d && d.cfgs) ? d.cfgs
         : [Array.isArray(d && d.itens) ? d.itens : [], []],
     itens: [],
-  }));
+  })).filter(d => {
+    if (ehUnico(d.tipo)) {
+      if (vistos.has(d.tipo)) return false;
+      vistos.add(d.tipo); return true;
+    }
+    return vagas-- > 0;
+  });
   dronePos = [];
   if (!G.oferta || !G.oferta.length) gerarOferta();
   iniciarSetor({ hp: d.hp, sh: d.sh, shCfg: d.shCfg });
