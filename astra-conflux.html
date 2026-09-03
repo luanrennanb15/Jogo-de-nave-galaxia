@@ -1237,17 +1237,49 @@ function canhoesPet() {
   return contarCanhoes(PET_CATS.map(cat => pet.eq[cat]));
 }
 
-/* Tira do porão o que o tiro custou. Se não der, gasta o resto e volta
-   para a LCB-10, que é ilimitada. Devolve false quando acabou. */
+/* ---- escada de calibres ----
+   Acabando a munição, ela não pula direto para a básica: desce um degrau de
+   cada vez, x5 → x4 → x3 → x2 → x1, parando na primeira que tiver estoque.
+   Vale para os foguetes também. O lança-mísseis fica de fora: acabou o
+   projétil, você troca na mão. */
+const ESCADA_AMMO = AMMO_ORDER.slice().sort((a,b) => AMMO[b].mult - AMMO[a].mult);
+const ESCADA_FOG  = ROCKET_ORDER.slice().sort((a,b) => ROCKETS[b].dmg - ROCKETS[a].dmg);
+
+function degrauAbaixo(escada, id, temEstoque) {
+  const i = escada.indexOf(id);
+  for (let k = (i < 0 ? 0 : i + 1); k < escada.length; k++)
+    if (temEstoque(escada[k])) return escada[k];
+  return null;
+}
+const temAmmo = id => AMMO[id].infinita || (G.municao[id] || 0) > 0;
+const temFog  = id => (G.foguetes[id] || 0) > 0;
+
+/* Troca para o calibre imediatamente abaixo que ainda tenha bala. */
+function descerMunicao(idAcabou) {
+  const novo = degrauAbaixo(ESCADA_AMMO, idAcabou, temAmmo) || "lcb10";
+  G.ammoSel = novo; G.calibre = novo;
+  toast(AMMO[idAcabou].nome + " acabou — descendo para " + AMMO[novo].nome);
+  montarBarraHab();
+  return novo;
+}
+function descerFoguete(idAcabou) {
+  const novo = degrauAbaixo(ESCADA_FOG, idAcabou, temFog);
+  if (!novo) { toast("Sem foguete nenhum no porão"); return null; }
+  G.foguetSel = novo;
+  toast(ROCKETS[idAcabou].nome + " acabou — descendo para " + ROCKETS[novo].nome);
+  montarBarraHab();
+  return novo;
+}
+
+/* Tira do porão o que o tiro custou. Não dando, gasta o resto e desce um
+   degrau. Devolve false quando a munição escolhida acabou. */
 function gastarMunicao(id, qtd) {
   const a = AMMO[id];
   if (!a || a.infinita) return true;
   const tem = G.municao[id] || 0;
   if (tem >= qtd) { G.municao[id] = tem - qtd; return true; }
   G.municao[id] = 0;
-  G.ammoSel = "lcb10"; G.calibre = "lcb10";
-  toast(a.nome + " acabou — voltando para " + AMMO.lcb10.nome);
-  montarBarraHab();
+  descerMunicao(id);
   return false;
 }
 /* dano de qualquer míssil ou foguete, já com a patente e a formação Alvo */
@@ -1701,7 +1733,8 @@ function proximoAlvo() {
 
 function selAmmo(id) {
   if (!id || !AMMO[id]) return;
-  if (!AMMO[id].infinita && !(G.municao[id] > 0)) { toast("Sem " + AMMO[id].nome); return; }
+  // insistiu numa que acabou: em vez de recusar, desce para a de baixo
+  if (!AMMO[id].infinita && !(G.municao[id] > 0)) { descerMunicao(id); return; }
   G.ammoSel = id;
   G.calibre = id;                     // o pet passa a bater no mesmo calibre
   toast("Munição: " + AMMO[id].nome + " (×" + AMMO[id].mult + ")"
@@ -1736,7 +1769,7 @@ function atirarFoguete() {
   const p = G.player, f = ROCKETS[G.foguetSel];
   if (!p.alvo) { toast("Sem alvo"); return; }
   if (G.tempo - p.ultimoFoguete < ROCKET_CD) return;
-  if (!(G.foguetes[G.foguetSel] > 0)) { toast("Sem " + f.nome); return; }
+  if (!(G.foguetes[G.foguetSel] > 0)) { descerFoguete(G.foguetSel); return; }
   if (dist(p.x, p.y, p.alvo.x, p.alvo.y) > 900) { toast("Fora de alcance"); return; }
   G.foguetes[G.foguetSel]--;
   p.ultimoFoguete = G.tempo;
@@ -1878,8 +1911,8 @@ function atualizar(dt) {
       quebrarCamuflagem();
       montarBarraHab();
     } else if (f && !p.semFoguete) {
-      p.semFoguete = true;
-      toast("MX-Míssil sem " + f.nome + " no porão");
+      // o módulo também desce de degrau sozinho quando o foguete acaba
+      if (!descerFoguete(G.foguetSel)) { p.semFoguete = true; }
     }
   }
 
@@ -2889,8 +2922,7 @@ function luzDaNave(t) {
   const p = G.player;
   if (invisivel()) return;
   const sp = spriteDaNave(G.nave);
-  const r = (G.nave === "tita" && spritePronto()) ? TITA_TAM * 0.78
-          : sp ? sp.tam * 0.82 : 46;
+  const r = sp ? sp.tam * 0.80 : 46;
   const forte = p.movendo ? 1 : 0.55;
   const gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
   gr.addColorStop(0, `rgba(255,190,130,${0.16*forte})`);
@@ -2999,8 +3031,7 @@ function desenhar(t) {
   if (!G.morto) {
     ctx.globalAlpha = invisivel() ? 0.4 : 1;
     const sp = spriteDaNave(G.nave);
-    if (G.nave === "tita" && spritePronto()) desenharTita(p.x, p.y, p.ang, t);
-    else if (sp) desenharNaveSprite(sp, p.x, p.y, p.ang, t);
+    if (sp) desenharNaveSprite(sp, p.x, p.y, p.ang, t);
     else desenharNave(p.x, p.y, p.ang, G.cor, 16);
     ctx.globalAlpha = 1;
     if (invulneravel()) {                       // bolha de proteção pós-ressurreição
@@ -3126,60 +3157,39 @@ function desenharTiro(b, t) {
       r: 1 + Math.random()*2, cor: "#ff9d4d", vida: 180 + Math.random()*200, max: 380 });
 }
 
-/* A Titã é desenhada com o sprite; as outras naves seguem no vetor de sempre. */
-function desenharTita(x, y, ang, t) {
+/* Desenha a nave do jogador com a tira dela.
+   Com vários quadros, a inclinação escolhe o quadro — é rotação de verdade,
+   vinda do modelo 3D. Com um quadro só, ela é fingida achatando e cisalhando
+   o sprite, que num jogo visto de cima engana bem o olho. */
+function desenharNaveSprite(s, x, y, ang, t) {
   const p = G.player;
-  const q = clamp(Math.round(TITA_MEIO + inclinacaoTita * TITA_MEIO), 0, TITA_QUADROS - 1);
-  const esc = TITA_TAM / TITA_LARG;
-  const w = TITA_LARG * esc, h = TITA_ALT * esc;
-
-  // parada, ela respira de leve
-  const parado = !p.movendo ? 1 : 0;
-  const respiro = parado ? 1 + Math.sin(t / 620) * 0.018 : 1;
+  const inc = inclinacaoTita;                     // −1 a 1, lido da velocidade de giro
+  const w = s.tam, h = s.tam * s.alt / s.larg;
+  const respiro = !p.movendo ? 1 + Math.sin(t/620)*0.018 : 1;
+  const q = s.q > 1 ? clamp(Math.round(s.meio + inc * s.meio), 0, s.q - 1) : 0;
 
   ctx.save();
   ctx.translate(x, y);
   ctx.rotate(ang);
   ctx.scale(respiro, respiro);
-
   chamaDoMotor(w, h, t);
+  /* Nas de um quadro só a curva é fingida, e o sinal aqui é o contrário do
+     usado na escolha de quadro: lá o índice cresce para um lado, aqui o
+     deslocamento em tela cresce para o outro. Sem esse menos, as naves de
+     figura única deitavam ao contrário das que vieram de modelo 3D. */
+  if (s.q === 1) {
+    ctx.translate(0, -inc * h * 0.07);
+    ctx.scale(1, 1 - Math.abs(inc) * 0.22);
+  }
 
-  ctx.drawImage(spriteTita, q * TITA_LARG, 0, TITA_LARG, TITA_ALT, -w/2, -h/2, w, h);
-
+  const põe = () => ctx.drawImage(s.img, q * s.larg, 0, s.larg, s.alt, -w/2, -h/2, w, h);
+  põe();
   // clarão no casco logo depois de apanhar
   const desde = G.tempo - (p.ultimoDano || -9999);
   if (desde < 260) {
     ctx.globalAlpha = 0.55 * (1 - desde/260);
     ctx.globalCompositeOperation = "lighter";
-    ctx.drawImage(spriteTita, q * TITA_LARG, 0, TITA_LARG, TITA_ALT, -w/2, -h/2, w, h);
-    ctx.globalCompositeOperation = "source-over";
-    ctx.globalAlpha = 1;
-  }
-  ctx.restore();
-}
-
-/* As demais naves usam uma figura só. A inclinação na curva vem de achatar
-   o sprite na vertical e empurrar de leve para o lado, o que engana bem o
-   olho num jogo visto de cima. */
-function desenharNaveSprite(s, x, y, ang, t) {
-  const p = G.player;
-  const w = s.tam, h = s.tam * s.img.naturalHeight / s.img.naturalWidth;
-  const inc = inclinacaoTita;                     // −1 a 1, mesma leitura de giro
-  const achata = 1 - Math.abs(inc) * 0.24;
-  const respiro = !p.movendo ? 1 + Math.sin(t/620)*0.018 : 1;
-
-  ctx.save();
-  ctx.translate(x, y);
-  ctx.rotate(ang);
-  ctx.scale(respiro, respiro);
-  chamaDoMotor(w, h, t);
-  ctx.transform(1, 0, inc * 0.20, achata, 0, 0);  // cisalha e achata: vira a barriga
-  ctx.drawImage(s.img, -w/2, -h/2, w, h);
-  const desde = G.tempo - (p.ultimoDano || -9999);
-  if (desde < 260) {
-    ctx.globalAlpha = 0.55 * (1 - desde/260);
-    ctx.globalCompositeOperation = "lighter";
-    ctx.drawImage(s.img, -w/2, -h/2, w, h);
+    põe();
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
   }
@@ -3230,33 +3240,30 @@ function desenharNave(x,y,ang,cor,tam) {
    modelo nenhum. Sem o arquivo ao lado do HTML, ela volta ao desenho vetorial.
    Modelo "Red Goliath Spaceship" de Harold.Llanos (Sketchfab), CC-BY-4.0.
 --------------------------------------------------------------------------- */
-const TITA_QUADROS = 33;                       // ímpar: existe um quadro exatamente reto
-const TITA_LARG = 104, TITA_ALT = 70;
-const TITA_MEIO  = (TITA_QUADROS - 1) / 2;     // meio da tira: o quadro reto
-const TITA_PASSO = 90 / (TITA_QUADROS - 1);    // graus de inclinação entre quadros
-const TITA_TAM   = 92;                         // largura com que ela é desenhada
-const spriteTita = new Image();
-spriteTita.src = "nave-tita.png";
-const spritePronto = () => spriteTita.complete && spriteTita.naturalWidth > 0;
-
-/* As outras quatro têm uma figura só, sem quadros de inclinação — a curva
-   delas é feita deformando o sprite na hora de desenhar. Faltando o arquivo,
-   a nave cai no desenho vetorial de antes. */
+/* Cada nave tem a sua tira. As que vieram de modelo 3D têm 33 quadros de
+   inclinação, de −45° a +45°; as que vieram de uma figura só têm 1, e nelas
+   a curva é fingida deformando o sprite na hora. */
 const SPRITE_NAVE = {
-  faisca:     { arq:"nave-faisca.png",     tam: 52 },
-  lamina:     { arq:"nave-lamina.png",     tam: 62 },
-  sentinela:  { arq:"nave-sentinela.png",  tam: 74 },
-  devastador: { arq:"nave-devastador.png", tam: 78 },
+  faisca:     { arq:"nave-faisca.png",     tam: 52, q: 1,  larg:124, alt:120 },
+  lamina:     { arq:"nave-lamina.png",     tam: 62, q: 1,  larg:132, alt:102 },
+  sentinela:  { arq:"nave-sentinela.png",  tam: 74, q: 1,  larg:150, alt:121 },
+  devastador: { arq:"nave-devastador.png", tam: 84, q: 33, larg: 96, alt: 84 },
+  tita:       { arq:"nave-tita.png",       tam: 92, q: 33, larg:104, alt: 70 },
 };
 for (const id in SPRITE_NAVE) {
-  const im = new Image();
-  im.src = SPRITE_NAVE[id].arq;
-  SPRITE_NAVE[id].img = im;
+  const s = SPRITE_NAVE[id];
+  s.img = new Image(); s.img.src = s.arq;
+  s.meio = (s.q - 1) / 2;                      // índice do quadro reto
 }
 const spriteDaNave = id => {
   const s = SPRITE_NAVE[id];
   return (s && s.img.complete && s.img.naturalWidth > 0) ? s : null;
 };
+const TITA_TAM = SPRITE_NAVE.tita.tam;         // usado pela luz e pelo rastro
+
+/* O pet e o drone Inovat também vieram de modelo 3D, com um quadro cada. */
+const spritePet = new Image();   spritePet.src   = "pet.png";
+const spriteDrone = new Image(); spriteDrone.src = "drone-inovat.png";
 
 /* Quanto ela deita na curva: a inclinação persegue a velocidade de giro e
    volta ao zero na reta. Guardado fora do save, é só enfeite. */
@@ -3275,9 +3282,8 @@ function alimentarRastro(dt) {
   if (p.movendo && !invisivel() && !G.morto) {
     const tras = p.ang + Math.PI;
     const sp = spriteDaNave(G.nave);
-    const d = (G.nave === "tita" && spritePronto()) ? TITA_TAM * 0.44
-            : sp ? sp.tam * 0.44 : 15;
-    for (const lado of ((G.nave === "tita" || sp) ? [-1, 1] : [0])) {
+    const d = sp ? sp.tam * 0.44 : 15;
+    for (const lado of (sp ? [-1, 1] : [0])) {
       rastro.push({
         x: p.x + Math.cos(tras) * d + Math.cos(tras + Math.PI/2) * lado * 9,
         y: p.y + Math.sin(tras) * d + Math.sin(tras + Math.PI/2) * lado * 9,
@@ -3404,29 +3410,37 @@ function desenharPet(t) {
   const pet = G.pet;
   if (!petAtivo()) return;
   const r = 10 + pet.nivel * 0.45;
+  const comSprite = spritePet.complete && spritePet.naturalWidth > 0;
   ctx.save(); ctx.translate(pet.x, pet.y); ctx.rotate(pet.ang);
 
-  ctx.globalAlpha = .2; ctx.fillStyle = PET_COR;
-  ctx.beginPath(); ctx.arc(0, 0, r + 6 + Math.sin(t/260)*1.5, 0, 6.29); ctx.fill();
-  ctx.globalAlpha = 1;
+  /* O halo pulsante existia para dar volume ao desenho vetorial. Em cima do
+     modelo 3D ele vira um brilho falso em volta e tira o ar de peça real. */
+  if (!comSprite) {
+    ctx.globalAlpha = .2; ctx.fillStyle = PET_COR;
+    ctx.beginPath(); ctx.arc(0, 0, r + 6 + Math.sin(t/260)*1.5, 0, 6.29); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
 
-  ctx.fillStyle = PET_COR;
-  ctx.strokeStyle = "rgba(255,255,255,.65)"; ctx.lineWidth = 1.2;
-  ctx.beginPath();                                  // corpo em gota, virado para a frente
-  ctx.moveTo(r*1.35, 0);
-  ctx.quadraticCurveTo(r*0.2, r*0.85, -r*0.9, r*0.5);
-  ctx.quadraticCurveTo(-r*1.15, 0, -r*0.9, -r*0.5);
-  ctx.quadraticCurveTo(r*0.2, -r*0.85, r*1.35, 0);
-  ctx.fill(); ctx.stroke();
-
-  ctx.fillStyle = "rgba(255,255,255,.85)";          // olho
-  ctx.beginPath(); ctx.arc(r*0.45, 0, r*0.22, 0, 6.29); ctx.fill();
-
-  ctx.globalAlpha = .55; ctx.fillStyle = PET_COR;   // asinhas batendo
-  const asa = Math.sin(t/90) * r*0.25;
-  ctx.beginPath(); ctx.ellipse(-r*0.15, -r*0.95 - asa, r*0.55, r*0.28, -0.5, 0, 6.29); ctx.fill();
-  ctx.beginPath(); ctx.ellipse(-r*0.15,  r*0.95 + asa, r*0.55, r*0.28,  0.5, 0, 6.29); ctx.fill();
-  ctx.globalAlpha = 1;
+  if (comSprite) {
+    const w = r * 2.9, h = w * spritePet.naturalHeight / spritePet.naturalWidth;
+    ctx.drawImage(spritePet, -w/2, -h/2, w, h);
+  } else {
+    ctx.fillStyle = PET_COR;
+    ctx.strokeStyle = "rgba(255,255,255,.65)"; ctx.lineWidth = 1.2;
+    ctx.beginPath();                                // corpo em gota, virado para a frente
+    ctx.moveTo(r*1.35, 0);
+    ctx.quadraticCurveTo(r*0.2, r*0.85, -r*0.9, r*0.5);
+    ctx.quadraticCurveTo(-r*1.15, 0, -r*0.9, -r*0.5);
+    ctx.quadraticCurveTo(r*0.2, -r*0.85, r*1.35, 0);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = "rgba(255,255,255,.85)";        // olho
+    ctx.beginPath(); ctx.arc(r*0.45, 0, r*0.22, 0, 6.29); ctx.fill();
+    ctx.globalAlpha = .55; ctx.fillStyle = PET_COR; // asinhas batendo
+    const asa = Math.sin(t/90) * r*0.25;
+    ctx.beginPath(); ctx.ellipse(-r*0.15, -r*0.95 - asa, r*0.55, r*0.28, -0.5, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-r*0.15,  r*0.95 + asa, r*0.55, r*0.28,  0.5, 0, 6.29); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
   ctx.restore();
 
   // barrinhas por cima, iguais às da nave
@@ -3485,34 +3499,45 @@ function desenharDrones(t) {
 function desenharDrone(x, y, ang, d) {
   const dt = DRONE_TIPOS[d.tipo], nv = droneNivel(d);
   const r = (dt.unico ? 9 : d.tipo === "inovat" ? 7.5 : 6) + nv * 0.35;
+  // o Inovat tem figura própria, vinda do modelo 3D; os outros seguem no vetor
+  const comSprite = d.tipo === "inovat" && spriteDrone.complete && spriteDrone.naturalWidth > 0;
   ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
 
-  ctx.globalAlpha = .22; ctx.fillStyle = dt.cor;
-  ctx.beginPath(); ctx.arc(0, 0, r + 4, 0, 6.29); ctx.fill();
-  ctx.globalAlpha = 1;
-
-  ctx.beginPath();
-  if (dt.unico) {                                  // Hercules e Zeus: losango alongado
-    ctx.moveTo(r*1.3, 0); ctx.lineTo(0, r*0.8);
-    ctx.lineTo(-r*1.1, 0); ctx.lineTo(0, -r*0.8);
-  } else if (d.tipo === "inovat") {
-    for (let i = 0; i < 6; i++) {
-      const a = (i/6)*6.283;
-      if (i) ctx.lineTo(Math.cos(a)*r, Math.sin(a)*r); else ctx.moveTo(Math.cos(a)*r, Math.sin(a)*r);
-    }
-  } else {
-    ctx.moveTo(r, 0); ctx.lineTo(-r*0.8, r*0.8); ctx.lineTo(-r*0.8, -r*0.8);
+  // o halo colorido só faz sentido nos desenhados a vetor: no modelo ele
+  // vira um brilho falso em volta e tira o ar de peça de metal
+  if (!comSprite) {
+    ctx.globalAlpha = .22; ctx.fillStyle = dt.cor;
+    ctx.beginPath(); ctx.arc(0, 0, r + 4, 0, 6.29); ctx.fill();
+    ctx.globalAlpha = 1;
   }
-  ctx.closePath();
-  ctx.fillStyle = dt.cor; ctx.fill();
-  ctx.strokeStyle = "rgba(255,255,255,.65)"; ctx.lineWidth = 1; ctx.stroke();
 
-  // ponto indicando a carga: laranja = canhão, azul = escudo
+  if (comSprite) {
+    const w = r * 3.4, h = w * spriteDrone.naturalHeight / spriteDrone.naturalWidth;
+    ctx.drawImage(spriteDrone, -w/2, -h/2, w, h);
+  } else {
+    ctx.beginPath();
+    if (dt.unico) {                                // Hercules e Zeus: losango alongado
+      ctx.moveTo(r*1.3, 0); ctx.lineTo(0, r*0.8);
+      ctx.lineTo(-r*1.1, 0); ctx.lineTo(0, -r*0.8);
+    } else {
+      ctx.moveTo(r, 0); ctx.lineTo(-r*0.8, r*0.8); ctx.lineTo(-r*0.8, -r*0.8);
+    }
+    ctx.closePath();
+    ctx.fillStyle = dt.cor; ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.65)"; ctx.lineWidth = 1; ctx.stroke();
+  }
+
+  /* Ponto indicando a carga: laranja = canhão, azul = escudo. No Inovat ele
+     vira uma marca pequena e opaca na traseira, em vez de uma luz no meio
+     do casco, que estragava a leitura do modelo. */
   const temLaser = d.itens.some(id => ITEMS.laser[id]);
   const temEscudo = d.itens.some(id => ITEMS.escudo[id]);
   if (temLaser || temEscudo) {
     ctx.fillStyle = temLaser && temEscudo ? "#b6ff8a" : temLaser ? "#ff9d4d" : "#63e6ff";
-    ctx.beginPath(); ctx.arc(0, 0, r*0.34, 0, 6.29); ctx.fill();
+    ctx.beginPath();
+    if (comSprite) ctx.arc(-r*0.95, 0, r*0.20, 0, 6.29);
+    else           ctx.arc(0, 0, r*0.34, 0, 6.29);
+    ctx.fill();
   }
   ctx.restore();
 }
@@ -3933,6 +3958,8 @@ function acionarCelula(r, c) {
     return;
   }
   if (cel.k === "fog") {
+    // insistir num foguete que acabou também desce um degrau
+    if (!(G.foguetes[cel.id] > 0)) { descerFoguete(cel.id); atirarFoguete(); return; }
     const trocou = G.foguetSel !== cel.id;
     G.foguetSel = cel.id;                      // trocar é livre, mesmo carregando
     if (trocou) toast("Foguete: " + ROCKETS[cel.id].nome);
@@ -3949,6 +3976,7 @@ function acionarCelula(r, c) {
 }
 
 function escolherFoguete(id) {
+  if (!(G.foguetes[id] > 0)) { descerFoguete(id); return; }   // acabou: cai para o de baixo
   G.foguetSel = id;
   toast("Foguete ativo: " + ROCKETS[id].nome);
   montarBarraHab();
@@ -5598,7 +5626,7 @@ function openHelp() {
     <div class="row"><div class="val">Portal</div><div class="muted">chegando perto aparece o botão <b>Saltar</b> na tela; a tecla <b>J</b> leva a nave até o portal e aciona sozinha. A carga leva 2,5s e sair de perto cancela</div></div>
     <div class="row"><div class="val">Fora do setor</div><div class="muted">o mapa não tem parede: passando da borda aparece DANGER em vermelho e, depois de 3 segundos, o casco começa a ceder até você voltar</div></div>
     <div class="row"><div class="val">T / G / M / P / L</div><div class="muted">missões · clã · mapa · perfil · log</div></div>
-    <div class="row"><div class="val">Gasto de munição</div><div class="muted">cada tiro desconta uma unidade por canhão que participou dele: os da nave mais os montados nos drones num tiro seu, e os do pet num tiro dele. Mais canhão significa mais dano e também mais consumo. A LCB-10 é ilimitada e nunca é descontada; acabando a munição escolhida, você volta para ela sozinho. A aba Munição em Equipamentos mostra o custo por tiro e para quantos tiros o porão dá</div></div>
+    <div class="row"><div class="val">Gasto de munição</div><div class="muted">cada tiro desconta uma unidade por canhão que participou dele: os da nave mais os montados nos drones num tiro seu, e os do pet num tiro dele. Mais canhão significa mais dano e também mais consumo. A LCB-10 é ilimitada e nunca é descontada. Acabando a munição escolhida, ela não pula direto para a básica: desce um degrau de cada vez pelo multiplicador — ×5, ×4, ×3, ×2,5, ×2, ×1 — e para na primeira que ainda tiver bala. Insistir numa que acabou faz a mesma coisa. Os foguetes seguem a mesma regra, do PLT-3030 para o PLT-2021 e daí para o R-310. Só o lança-mísseis fica de fora: acabando o projétil, a troca é na mão. A aba Munição em Equipamentos mostra o custo por tiro e para quantos tiros o porão dá</div></div>
     <div class="row"><div class="val">Recompensas</div><div class="muted">créditos, XP e honra entram sozinhos ao abater — aparecem listados no canto superior esquerdo</div></div>
     <div class="row"><div class="val">Carga e caixas</div><div class="muted">ficam boiando no espaço: clique nelas e a nave vai até lá e recolhe ao chegar</div></div>
     <div class="row"><div class="val">Portal de invasão</div><div class="muted">elites com 3× recompensa, some depois de 70s</div></div>
@@ -5617,7 +5645,7 @@ function openHelp() {
     <div class="row"><div class="val">Minimapa</div><div class="muted">clique (ou clique e arraste) no minimapa para viajar até aquele ponto</div></div>
     <div class="row"><div class="val">Morte</div><div class="muted">a tela escurece e mostra quem te abateu: 500 cr para ser resgatado até a base, chegando com casco e escudo zerados e recuperando na doca, ou 1.000 cr para reviver no lugar com metade do casco e metade do escudo da configuração ativa, intocável por 3s</div></div>
     <div class="row"><div class="val">Hangar</div><div class="muted">começa com 1 espaço. No painel Equipamentos, o quadrado com <b>+</b> compra mais um espaço, até 5. Comprando uma nave com o hangar lotado, o jogo pede confirmação e depois mostra as suas naves para você escolher qual sai. Nave repetida não entra</div></div>
-    <div class="row"><div class="val">Visual das naves</div><div class="muted">todas as cinco usam figura pronta em vez do desenho vetorial. A Faísca, a Lâmina, a Sentinela e o Devastador têm uma imagem cada, e a inclinação na curva é feita achatando e cisalhando o sprite na hora. A Titã tem sete quadros da mesma nave vista de cima, girando de −30° a +30° sobre o próprio eixo. Ela deita para o lado enquanto você faz a curva, solta chama pelos motores conforme a velocidade, deixa uma esteira ao acelerar, respira de leve quando está parada e acende quando o escudo apanha. Se algum dos arquivos <b>nave-*.png</b> não estiver na mesma pasta do jogo, aquela nave volta sozinha para o desenho antigo</div></div>
+    <div class="row"><div class="val">Visual das naves</div><div class="muted">todas as cinco usam figura pronta em vez do desenho vetorial. A Titã e o Devastador vieram de modelo 3D e têm 33 quadros cada, girando de −45° a +45° sobre o próprio eixo, então a curva é rotação de verdade. A Faísca, a Lâmina e a Sentinela têm uma imagem só, e nelas a inclinação é fingida achatando e cisalhando o sprite na hora. O pet e o drone Inovat também saíram de modelo 3D. Ela deita para o lado enquanto você faz a curva, solta chama pelos motores conforme a velocidade, deixa uma esteira ao acelerar, respira de leve quando está parada e acende quando o escudo apanha. Se algum dos arquivos <b>nave-*.png</b> não estiver na mesma pasta do jogo, aquela nave volta sozinha para o desenho antigo</div></div>
     <div class="row"><div class="val">Efeitos visuais</div><div class="muted">o fundo tem nebulosa e estrelas em várias profundidades, que andam em velocidades diferentes, mais um corpo distante por setor. A nave espalha luz em volta e acende os motores; os tiros somam brilho em vez de tapar o fundo. Explosões soltam estilhaços e anéis de choque, e a tela treme conforme a distância do estouro e o tamanho da pancada que você levou. Acelerando, riscos de poeira passam para trás dando a sensação de velocidade. A câmera fica presa na nave: ela só se mexe na tremida</div></div>
     <div class="row"><div class="val">Créditos</div><div class="muted">a figura da Titã foi gerada a partir do modelo <b>Red Goliath Spaceship</b>, de Harold.Llanos no Sketchfab, sob licença CC-BY-4.0</div></div>
     <div class="foot"><button onclick="fecharModal()">Entendi</button></div>`);
