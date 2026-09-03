@@ -346,15 +346,26 @@
     <div class="box">
       <h1>ASTRA CONFLUX</h1>
       <p class="sub">Três facções disputam os setores externos. Escolha um lado, monte sua nave, farme, suba de patente.</p>
-      <div class="lbl">Nome do piloto</div>
-      <input type="text" id="nameInput" maxlength="16" placeholder="Piloto">
-      <div class="lbl">Facção</div>
-      <div class="cards" id="factionCards" style="margin-top:8px"></div>
-      <div class="foot">
-        <button id="btnContinuar" class="hidden" onclick="continuarSave()">Continuar</button>
-        <button onclick="document.getElementById('loadFile').click()">Carregar arquivo</button>
-        <button class="primary" onclick="startGame()">Novo jogo</button>
+
+      <div id="telaEspacos">
+        <div class="lbl">Espaços de save — cada um é uma conta separada</div>
+        <div id="listaEspacos"></div>
+        <div class="foot">
+          <button onclick="document.getElementById('loadFile').click()">Carregar arquivo</button>
+        </div>
       </div>
+
+      <div id="painelNovo" class="hidden">
+        <div class="lbl">Nome do piloto</div>
+        <input type="text" id="nameInput" maxlength="16" placeholder="Piloto">
+        <div class="lbl">Facção</div>
+        <div class="cards" id="factionCards" style="margin-top:8px"></div>
+        <div class="foot">
+          <button onclick="telaEspacos()">Voltar</button>
+          <button class="primary" onclick="startGame()">Começar</button>
+        </div>
+      </div>
+
       <input type="file" id="loadFile" accept=".json" class="hidden" onchange="loadGame(event)">
     </div>
   </div>
@@ -1344,6 +1355,7 @@ function startGame() {
   G = novoJogo(nome, escolhaFaccao);
   gerarOferta();
   iniciarSetor();
+  storage("set", serializar());          // grava já no espaço escolhido
   document.getElementById("startScreen").classList.add("hidden");
   running = true;
   logar("Bem-vindo, " + G.nome + ". Boa caçada.");
@@ -5600,8 +5612,10 @@ function openProfile() {
     <h2>Patentes</h2>
     ${RANKS.map((r,i) => `<div class="row"><div class="${i === rankIndex() ? "val" : "muted"}">${r.nome}</div>
       <div class="muted">${fmt(r.honra)} honra${i === rankIndex() ? " · atual" : ""}</div></div>`).join("")}
+    <div class="row"><div>Espaço de save</div><div class="val">${espacoAtivo+1} de ${SAVE_ESPACOS}</div></div>
     <div class="foot"><button onclick="exportarSave()">Exportar save</button>
-      <button onclick="apagarSave()">Apagar progresso</button>
+      <button onclick="trocarDeConta()">Trocar de conta</button>
+      <button onclick="apagarSave()">Apagar este espaço</button>
       <button onclick="fecharModal()">Fechar</button></div>`);
 }
 
@@ -5626,6 +5640,7 @@ function openHelp() {
     <div class="row"><div class="val">Portal</div><div class="muted">chegando perto aparece o botão <b>Saltar</b> na tela; a tecla <b>J</b> leva a nave até o portal e aciona sozinha. A carga leva 2,5s e sair de perto cancela</div></div>
     <div class="row"><div class="val">Fora do setor</div><div class="muted">o mapa não tem parede: passando da borda aparece DANGER em vermelho e, depois de 3 segundos, o casco começa a ceder até você voltar</div></div>
     <div class="row"><div class="val">T / G / M / P / L</div><div class="muted">missões · clã · mapa · perfil · log</div></div>
+    <div class="row"><div class="val">Contas</div><div class="muted">o jogo guarda três espaços de save independentes. A tela inicial lista os três com nome, nível, facção, créditos e tempo de voo; você entra no que quiser e o salvamento automático escreve só nele. Dentro do jogo, <b>Perfil</b> tem <b>Trocar de conta</b>, que salva e volta para a lista. Apagar um espaço não encosta nos outros, e o save antigo de antes desta versão virou o espaço 1 sozinho</div></div>
     <div class="row"><div class="val">Gasto de munição</div><div class="muted">cada tiro desconta uma unidade por canhão que participou dele: os da nave mais os montados nos drones num tiro seu, e os do pet num tiro dele. Mais canhão significa mais dano e também mais consumo. A LCB-10 é ilimitada e nunca é descontada. Acabando a munição escolhida, ela não pula direto para a básica: desce um degrau de cada vez pelo multiplicador — ×5, ×4, ×3, ×2,5, ×2, ×1 — e para na primeira que ainda tiver bala. Insistir numa que acabou faz a mesma coisa. Os foguetes seguem a mesma regra, do PLT-3030 para o PLT-2021 e daí para o R-310. Só o lança-mísseis fica de fora: acabando o projétil, a troca é na mão. A aba Munição em Equipamentos mostra o custo por tiro e para quantos tiros o porão dá</div></div>
     <div class="row"><div class="val">Recompensas</div><div class="muted">créditos, XP e honra entram sozinhos ao abater — aparecem listados no canto superior esquerdo</div></div>
     <div class="row"><div class="val">Carga e caixas</div><div class="muted">ficam boiando no espaço: clique nelas e a nave vai até lá e recolhe ao chegar</div></div>
@@ -5654,20 +5669,61 @@ function openHelp() {
 /* Usa localStorage quando disponível; se o navegador bloquear, cai para
    memória e o jogador ainda pode exportar/importar o arquivo .json. */
 
-const SAVE_KEY = "astraConflux_v2";
-let memSave = null, ultimoSave = 0;
+/* ---- espaços de save ----
+   São três contas independentes, cada uma na sua chave. O jogo lembra em qual
+   você entrou e o salvamento automático escreve só nela, então dá para ter uma
+   conta forte parada enquanto você começa outra do zero. A chave antiga vira
+   o espaço 1 na primeira vez que o jogo abre. */
+const SAVE_ESPACOS = 3;
+const SAVE_ANTIGA = "astraConflux_v2";
+const chaveEspaco = i => "astraConflux_v3_" + i;
+const CHAVE_ATIVO = "astraConflux_ativo";
 
-function storage(acao, valor) {
+let memSave = {}, ultimoSave = 0;
+let espacoAtivo = 0;
+
+function storage(acao, valor, i) {
+  const k = chaveEspaco(i == null ? espacoAtivo : i);
   try {
-    if (acao === "get") return localStorage.getItem(SAVE_KEY);
-    if (acao === "set") { localStorage.setItem(SAVE_KEY, valor); return true; }
-    localStorage.removeItem(SAVE_KEY); return true;
+    if (acao === "get") return localStorage.getItem(k);
+    if (acao === "set") { localStorage.setItem(k, valor); return true; }
+    localStorage.removeItem(k); return true;
   } catch (e) {
-    if (acao === "get") return memSave;
-    if (acao === "set") { memSave = valor; return true; }
-    memSave = null; return true;
+    if (acao === "get") return memSave[k] || null;
+    if (acao === "set") { memSave[k] = valor; return true; }
+    delete memSave[k]; return true;
   }
 }
+
+/* Lê o cabeçalho de um espaço sem carregar o jogo: nome, nível, facção... */
+function resumoEspaco(i) {
+  const raw = storage("get", null, i);
+  if (!raw) return null;
+  try {
+    const d = JSON.parse(raw);
+    return { nome: d.nome || "Piloto", nivel: d.nivel || 1, faccao: d.faccao,
+             creditos: d.creditos || 0, honra: d.honra || 0,
+             nave: d.nave, jogado: d.jogado || 0, setor: (d.setor || 0) + 1 };
+  } catch (e) { return null; }
+}
+
+function lembrarAtivo(i) {
+  espacoAtivo = i;
+  try { localStorage.setItem(CHAVE_ATIVO, String(i)); } catch (e) {}
+}
+
+/* Migração: o save único de antes passa a ser o espaço 1. */
+(function migrarSaveAntigo() {
+  try {
+    const velho = localStorage.getItem(SAVE_ANTIGA);
+    if (velho && !localStorage.getItem(chaveEspaco(0))) {
+      localStorage.setItem(chaveEspaco(0), velho);
+      localStorage.removeItem(SAVE_ANTIGA);
+    }
+    const a = parseInt(localStorage.getItem(CHAVE_ATIVO), 10);
+    if (a >= 0 && a < SAVE_ESPACOS) espacoAtivo = a;
+  } catch (e) {}
+})();
 
 function serializar() {
   return JSON.stringify({
@@ -5777,24 +5833,59 @@ function autoSave() {
   storage("set", serializar());
 }
 
-function continuarSave() {
+function continuarSave(i) {
+  if (i != null) lembrarAtivo(i);
   const raw = storage("get");
-  if (!raw) { toast("Nenhum progresso salvo"); return; }
-  try { aplicarSave(JSON.parse(raw)); toast("Progresso carregado"); }
+  if (!raw) { toast("Espaço vazio"); return; }
+  try { aplicarSave(JSON.parse(raw)); toast("Entrou no espaço " + (espacoAtivo+1) + " — " + G.nome); }
   catch (e) { toast("Save corrompido"); }
+}
+
+/* Começar do zero num espaço escolhido, sem encostar nos outros. */
+function novoNoEspaco(i) {
+  lembrarAtivo(i);
+  const r = resumoEspaco(i);
+  if (r) {
+    abrirModal(`<h1 style="font-size:17px">APAGAR O ESPAÇO ${i+1}?</h1>
+      <p class="sub">O espaço ${i+1} tem <b>${r.nome}</b>, nível ${r.nivel}, com
+        ${fmt(r.creditos)} cr. Começar um jogo novo aqui apaga essa conta para sempre.
+        Os outros espaços não são tocados.</p>
+      <div class="foot">
+        <button onclick="fecharModal();telaEspacos()">Não, voltar</button>
+        <button class="danger" onclick="fecharModal();confirmarNovo(${i})">Sim, apagar e começar</button>
+      </div>`);
+    return;
+  }
+  confirmarNovo(i);
+}
+function confirmarNovo(i) {
+  lembrarAtivo(i);
+  storage("del");
+  el("startScreen").classList.remove("hidden");
+  el("telaEspacos").classList.add("hidden");
+  el("painelNovo").classList.remove("hidden");
 }
 
 function apagarSave() {
   storage("del");
-  toast("Progresso apagado — recarregue a página para começar de novo");
+  toast("Espaço " + (espacoAtivo+1) + " apagado — recarregue a página");
   fecharModal();
+}
+
+/* Sai da conta atual e volta para a lista, salvando antes. */
+function trocarDeConta() {
+  if (running) storage("set", serializar());
+  running = false;
+  fecharModal();
+  el("startScreen").classList.remove("hidden");
+  telaEspacos();
 }
 
 function exportarSave() {
   const blob = new Blob([serializar()], { type:"application/json" });
   const a = document.createElement("a");
   a.href = URL.createObjectURL(blob);
-  a.download = "astra-conflux-save.json";
+  a.download = `astra-conflux-${(G.nome||"piloto").toLowerCase().replace(/\W+/g,"-")}.json`;
   a.click();
   toast("Arquivo de save baixado");
 }
@@ -5804,7 +5895,15 @@ function loadGame(ev) {
   if (!f) return;
   const fr = new FileReader();
   fr.onload = () => {
-    try { aplicarSave(JSON.parse(fr.result)); toast("Save carregado — bem-vindo de volta, " + G.nome); }
+    // o arquivo entra no primeiro espaço livre, sem passar por cima de conta nenhuma
+    let destino = espacoAtivo;
+    for (let i = 0; i < SAVE_ESPACOS; i++) if (!resumoEspaco(i)) { destino = i; break; }
+    lembrarAtivo(destino);
+    try {
+      aplicarSave(JSON.parse(fr.result));
+      storage("set", serializar());
+      toast(`Save carregado no espaço ${destino+1} — bem-vindo de volta, ${G.nome}`);
+    }
     catch (e) { toast("Arquivo de save inválido"); }
   };
   fr.readAsText(f);
@@ -5812,16 +5911,36 @@ function loadGame(ev) {
 
 window.addEventListener("beforeunload", () => { if (running) storage("set", serializar()); });
 
-(function checarSave() {
-  const raw = storage("get");
-  if (!raw) return;
-  try {
-    const d = JSON.parse(raw);
-    const b = document.getElementById("btnContinuar");
-    b.classList.remove("hidden");
-    b.textContent = `Continuar (${d.nome}, nv ${d.nivel})`;
-  } catch (e) {}
-})();
+/* Monta a lista dos três espaços na tela inicial. */
+function telaEspacos() {
+  el("painelNovo").classList.add("hidden");
+  el("telaEspacos").classList.remove("hidden");
+  let h = "";
+  for (let i = 0; i < SAVE_ESPACOS; i++) {
+    const r = resumoEspaco(i);
+    if (r) {
+      const f = FACTIONS.find(x => x.id === r.faccao);
+      const s = SHIPS.find(x => x.id === r.nave);
+      h += `<div class="row">
+        <div><div class="val">${i+1}. ${r.nome}
+            <span class="muted">nível ${r.nivel}${f ? " · " + f.nome : ""}</span></div>
+          <div class="muted">${s ? s.nome + " · " : ""}${fmt(r.creditos)} cr ·
+            ${fmt(r.honra)} honra · setor ${r.setor} · ${Math.floor(r.jogado/60000)} min</div></div>
+        <div style="text-align:right;white-space:nowrap">
+          <button class="primary" onclick="continuarSave(${i})">Entrar</button>
+          <button class="mini danger" onclick="novoNoEspaco(${i})">Apagar</button>
+        </div></div>`;
+    } else {
+      h += `<div class="row">
+        <div><div class="val muted">${i+1}. espaço livre</div>
+          <div class="muted">nenhuma conta salva aqui</div></div>
+        <button onclick="novoNoEspaco(${i})">Criar conta</button>
+      </div>`;
+    }
+  }
+  el("listaEspacos").innerHTML = h;
+}
+telaEspacos();
 /* ===================== UTILIDADES ===================== */
 
 function el(id) { return document.getElementById(id); }
