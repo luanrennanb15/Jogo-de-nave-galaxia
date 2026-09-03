@@ -71,9 +71,17 @@
   .ab.tiro { border-color: rgba(255,209,102,.45); background: rgba(120,90,30,.28); color: #ffe6ac; }
   .ab.tiro.on { border-color: #ffd166; background: rgba(255,190,60,.4); color: #fff6dd;
                 box-shadow: 0 0 12px rgba(255,209,102,.55); }
-  .ab.salva { border-color: rgba(255,90,208,.5); background: rgba(150,40,120,.3); color: #ffc4ee; }
-  .ab.salva.on { border-color: #ff5ad0; background: rgba(255,90,208,.42); color: #fff0fb;
-                 box-shadow: 0 0 12px rgba(255,90,208,.55); }
+  .ab.salva { background: rgba(255,255,255,.06); }
+  .ab.salva.on { box-shadow: 0 0 12px currentColor; }
+  .lancIndic { display: flex; flex-direction: column; align-items: center; gap: 4px; flex: none;
+               padding: 5px 9px; border-radius: 9px; cursor: pointer;
+               background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.15);
+               transition: .15s; }
+  .lancIndic:hover { background: rgba(255,255,255,.12); }
+  .lancDots { display: flex; gap: 4px; }
+  .lancDots i { width: 10px; height: 10px; border-radius: 50%; display: block;
+                border: 1px solid rgba(255,255,255,.25); transition: .15s; }
+  .lancIndic small { font-size: 8.5px; letter-spacing: .05em; color: #8fb4dc; }
   .abKey { position: absolute; top: 2px; left: 4px; font-size: 8px; letter-spacing: 0;
            color: #8fb4dc; opacity: .85; pointer-events: none; }
   .abGear { width: 34px; height: 34px; border-radius: 8px; display: flex; align-items: center;
@@ -409,7 +417,7 @@ const ITEMS = {
   /* Módulos não somam número: cada um liga um comportamento. */
   modulo: {
     MISSIL: { nome:"MX-Míssil",  curto:"míssil automático", preco:70000,
-              desc:"Passivo: enquanto você estiver atacando, lança sozinho o foguete que estiver selecionado na barra, a cada 2,6s, gastando do estoque dele. Parar o ataque para os lançamentos. Não ocupa espaço na barra." },
+              desc:"Passivo: enquanto você estiver atacando, dispara sozinho o foguete selecionado a cada 2,6s e também aciona o lança-mísseis a cada recarga dele. Gasta do estoque de ambos. Parar o ataque para os dois. Não ocupa espaço na barra." },
     EMP:    { nome:"EMP-9",      curto:"pulso de sobrecarga", preco:60000,
               desc:"Você aciona quando quiser: solta um pulso que faz os inimigos por perto perderem a mira por 3s. Recarrega em 10s." },
     VEU:    { nome:"Véu-7",      curto:"camuflagem", preco:95000,
@@ -451,9 +459,9 @@ const ROCKET_CD = 3400;
 
 /* Munição exclusiva dos lança-mísseis. */
 const PROJETEIS = {
-  P1122: { nome:"Projétil-1122", dmg:3500, preco:900 },
-  P2540: { nome:"Projétil-2540", dmg:5000, preco:1600 },
-  P3030: { nome:"Projétil-3030", dmg:6500, preco:2400 },
+  P1122: { nome:"Projétil-1122", dmg:3500, preco:900,  cor:"#4cc9ff" },   // fraco  — azul
+  P2540: { nome:"Projétil-2540", dmg:5000, preco:1600, cor:"#ffd166" },   // médio  — amarelo
+  P3030: { nome:"Projétil-3030", dmg:6500, preco:2400, cor:"#ff5a5a" },   // forte  — vermelho
 };
 const PROJ_ORDER = ["P1122","P2540","P3030"];
 
@@ -1398,6 +1406,12 @@ function atualizar(dt) {
     }
   }
 
+  // o mesmo módulo também aciona sozinho o lança-mísseis, no ritmo dele
+  if (nMissil && p.atacando && p.alvo && G.inimigos.includes(p.alvo) &&
+      misseisPorSalva() && T >= (p.lancCd || 0)) {
+    dispararLancador(true);
+  }
+
   // inimigos
   for (const en of G.inimigos) {
     const ed = en.d, dp = dist(en.x, en.y, p.x, p.y);
@@ -1438,16 +1452,32 @@ function atualizar(dt) {
   // --- projéteis em voo ---
   for (let i = G.tiros.length - 1; i >= 0; i--) {
     const b = G.tiros[i];
-    if (b.doJogador && !G.inimigos.includes(b.alvo)) { G.tiros.splice(i,1); continue; }
+    if (b.doJogador && !G.inimigos.includes(b.alvo)) {
+      if (b.salva) fecharSalva(b.salva);        // alvo sumiu: fecha a conta do que já acertou
+      G.tiros.splice(i,1); continue;
+    }
+    // tiro ainda na fila da rajada: espera a vez, colado na nave
+    if (b.espera > 0) {
+      b.espera -= dt;
+      if (b.espera < 0) b.espera = 0;          // zera certinho, senão nunca é desenhado
+      if (b.de) { b.x = b.de.x; b.y = b.de.y; b.nascido = T; }
+      continue;
+    }
     const a = Math.atan2(b.alvo.y - b.y, b.alvo.x - b.x);
     // míssil de lançador sai em curva e vai fechando a mira aos poucos
-    b.ang = b.curvo ? anguloSuave(b.ang, a, 0.055) : a;
+    // na fase de abertura o míssil vira devagar (é o arco); cumprido o tempo
+    // mínimo de voo ele fecha a mira com força e vai para cima do alvo
+    if (b.curvo) {
+      const abrindo = (T - b.nascido) < (b.minVoo || 0);
+      b.ang = anguloSuave(b.ang, a, abrindo ? 0.018 : 0.35);
+    } else b.ang = a;
     if (b.curvo && (b.vida % 2 === 0))
       G.particulas.push({ x:b.x, y:b.y, vx:(Math.random()-0.5)*0.5, vy:(Math.random()-0.5)*0.5,
                           r:1.5+Math.random()*1.5, cor:"#ff5ad0", vida:220+Math.random()*180, max:400 });
     const passo = b.vel * dt/16;
     const dd = dist(b.x, b.y, b.alvo.x, b.alvo.y);
-    if (dd <= passo + (b.curvo ? 18 : 12)) {
+    const podeAcertar = T - b.nascido >= (b.minVoo || 0);   // míssil precisa do tempo de voo
+    if (podeAcertar && dd <= passo + (b.curvo ? 18 : 12)) {
       if (b.doJogador && b.rouba) {
         // DRNO-25: só mexe no escudo, e o que tira vai para o seu
         const en = b.alvo;
@@ -1458,9 +1488,15 @@ function atualizar(dt) {
         numeroDano(en.x, en.y - 28, "-" + fmt(roubado) + " esc", "#63e6ff");
         if (roubado > 0) numeroDano(p.x, p.y - 46, "+" + fmt(roubado), "#63e6ff");
         faisca(en.x, en.y, "#4cc9ff");
+      } else if (b.doJogador && b.visual) {
+        faisca(b.alvo.x, b.alvo.y, b.cor);      // rajada de enfeite: só o clarão
       } else if (b.doJogador) {
-        aplicarDano(b.alvo, b.dano);
-        b.foguete ? explosao(b.alvo.x, b.alvo.y, "#ffb347", 16) : faisca(b.alvo.x, b.alvo.y, b.cor);
+        aplicarDano(b.alvo, b.dano, !!b.salva);
+        if (b.salva) {
+          b.salva.total += b.dano;
+          fecharSalva(b.salva, b.alvo.x, b.alvo.y);
+        }
+        b.foguete ? explosao(b.alvo.x, b.alvo.y, b.cor || "#ffb347", 16) : faisca(b.alvo.x, b.alvo.y, b.cor);
         if (b.alvo.hp <= 0) matarInimigo(b.alvo);
       } else {
         // na zona segura o tiro só machuca se vier de quem você está atacando —
@@ -1472,8 +1508,9 @@ function atualizar(dt) {
       G.tiros.splice(i,1);
       continue;
     }
-    b.x += Math.cos(a) * passo;
-    b.y += Math.sin(a) * passo;
+    // anda na direção que o projétil está apontando — é isso que desenha a curva
+    b.x += Math.cos(b.ang) * passo;
+    b.y += Math.sin(b.ang) * passo;
     if (++b.vida > 400) G.tiros.splice(i,1);
   }
 
@@ -1578,13 +1615,16 @@ function atirarLaser(origem, alvo, dano, cor, doJogador, foguete, extra) {
   const a = Math.atan2(alvo.y - origem.y, alvo.x - origem.x);
   const ex = extra || {};
   const lado = (Math.random() < 0.5 ? 1 : -1) * (foguete ? 0 : 8) + (ex.desvio || 0);
+  // ponto de saída: pode vir pronto (tubos do lançador) ou sair da frente da nave
+  const px = ex.pos ? ex.pos.x : origem.x + Math.cos(a + Math.PI/2) * lado + Math.cos(a) * 14;
+  const py = ex.pos ? ex.pos.y : origem.y + Math.sin(a + Math.PI/2) * lado + Math.sin(a) * 14;
   G.tiros.push({
-    x: origem.x + Math.cos(a + Math.PI/2) * lado + Math.cos(a) * 14,
-    y: origem.y + Math.sin(a + Math.PI/2) * lado + Math.sin(a) * 14,
+    x: px, y: py, nascido: G.tempo, minVoo: ex.minVoo || 0,
     ang: (ex.angInicial != null ? ex.angInicial : a),
     alvo, dano, cor, doJogador, foguete: !!foguete, de: origem,
     vel: (ex.vel || (foguete ? 9 : (doJogador ? 16 : 12))), vida: 0,
-    rouba: !!ex.rouba, curvo: !!ex.curvo,
+    rouba: !!ex.rouba, curvo: !!ex.curvo, salva: ex.salva || null, espera: ex.espera || 0,
+    visual: !!ex.visual,
     forma: ex.forma || (ex.curvo ? "missil" : foguete ? "foguete" : "bolt"),
   });
 }
@@ -1601,48 +1641,73 @@ function cargaLancador() {
   return cd || 5000;
 }
 
-/* Lança-mísseis: salva do projétil selecionado, saindo em leque e curvando
+/* Ângulos de saída da salva, em relação à direção do alvo:
+   com 5, dois abrem por cima, um sai pelas costas e dois por baixo;
+   com 3, um de cada lado e um por trás. Todos fecham a curva depois. */
+/* Os mísseis saem enfileirados na nave e disparam para o lado contrário ao
+   alvo, abrindo em leque. Cada um descreve um arco largo por fora e só
+   depois mergulha no inimigo. */
+const ESPACO_TUBO = 8;
+const ABERTURA_SALVA = 1.15;   // quanto o leque se abre para trás
+
+function lequeDeSaida(n) {
+  return Array.from({ length:n }, (_,i) =>
+    Math.PI + ((i - (n-1)/2) / Math.max(1,(n-1)/2)) * ABERTURA_SALVA);
+}
+function tubosDeSaida(n) {
+  return Array.from({ length:n }, (_,i) =>
+    ({ fx: 4, fy: (i - (n-1)/2) * ESPACO_TUBO }));
+}
+
+/* Lança-mísseis: salva do projétil selecionado, saindo aberta e curvando
    até o alvo. */
-function dispararLancador() {
+function dispararLancador(auto) {
   const p = G.player;
   const n = misseisPorSalva();
-  if (!n) { toast("Nenhum lança-mísseis encaixado"); return; }
-  if (G.tempo < (p.lancCd || 0)) { toast("Lança-mísseis carregando"); return; }
+  const aviso = m => { if (!auto) toast(m); };
+  if (!n) { aviso("Nenhum lança-mísseis encaixado"); return; }
+  if (G.tempo < (p.lancCd || 0)) { aviso("Lança-mísseis carregando"); return; }
 
   const proj = PROJETEIS[G.projetilSel];
   if (!proj) return;
   if ((G.projeteis[G.projetilSel] || 0) < n) {
-    toast("Sem " + proj.nome + " suficiente (precisa de " + n + ")"); return;
+    aviso("Sem " + proj.nome + " suficiente (precisa de " + n + ")"); return;
   }
 
   const valido = p.alvo && G.inimigos.includes(p.alvo) &&
                  dist(p.x, p.y, p.alvo.x, p.alvo.y) <= 900;
   if (!valido) p.alvo = alvoMaisProximo(900);
-  if (!p.alvo) { toast("Nenhum inimigo por perto"); return; }
+  if (!p.alvo) { aviso("Nenhum inimigo por perto"); return; }
 
   G.projeteis[G.projetilSel] -= n;
   p.lancCd = G.tempo + cargaLancador();
   const dano = proj.dmg * (1 + 0.02*rankIndex());
   const paraAlvo = Math.atan2(p.alvo.y - p.y, p.alvo.x - p.x);
+  // a salva inteira soma num número só quando chega
+  const salva = { restantes: n, total: 0, cor: proj.cor, x: p.alvo.x, y: p.alvo.y };
 
+  const saidas = lequeDeSaida(n), tubos = tubosDeSaida(n);
+  const cos = Math.cos(p.ang), sen = Math.sin(p.ang);
   for (let i = 0; i < n; i++) {
-    const leque = ((i - (n-1)/2) / Math.max(1,(n-1)/2)) * 1.15;   // abre em leque
-    atirarLaser(p, p.alvo, dano, "#ff5ad0", true, true, {
-      curvo: true,
-      angInicial: paraAlvo + leque + (Math.random()-0.5)*0.25,
-      vel: 10.5 + Math.random()*2,
-      desvio: (i - (n-1)/2) * 7,
+    const off = saidas[i], tb = tubos[i];
+    atirarLaser(p, p.alvo, dano, proj.cor, true, true, {
+      curvo: true, salva,
+      pos: { x: p.x + tb.fx*cos - tb.fy*sen, y: p.y + tb.fx*sen + tb.fy*cos },
+      angInicial: paraAlvo + off,
+      vel: 11 + Math.random()*1.2,
+      minVoo: 800,                            // 0,8s abrindo a curva antes de poder acertar
     });
   }
   p.alvo.agro = true;
   p.alvo.permitido = G.tempo + PERMISSAO_REVIDE;
   quebrarCamuflagem();
   beep(150, 0.16);
-  toast(n + "× " + proj.nome + " a caminho");
+  if (!auto) toast(n + "× " + proj.nome + " a caminho");
   montarBarraHab();
 }
 
-/* RSB-300: rajada de 4 tiros e resfriamento */
+/* RSB-300: um tiro só, de um dano só, mas que sai como quatro rajadas
+   laranja grossas, uma atrás da outra. Depois disso, resfria. */
 function dispararRajada(id) {
   const a = AMMO[id], p = G.player;
   if (!p.cdAmmo) p.cdAmmo = {};
@@ -1652,14 +1717,20 @@ function dispararRajada(id) {
                  dist(p.x, p.y, p.alvo.x, p.alvo.y) <= ALCANCE_AUTO;
   if (!valido) p.alvo = alvoMaisProximo();
   if (!p.alvo) { toast("Nenhum inimigo por perto"); return; }
-  if ((G.municao[id] || 0) < a.rajada) { toast("Sem " + a.nome + " suficiente"); return; }
+  if ((G.municao[id] || 0) < 1) { toast("Sem " + a.nome); return; }
 
-  G.municao[id] -= a.rajada;
+  G.municao[id] -= 1;                       // um disparo, uma unidade
   p.cdAmmo[id] = G.tempo + a.cd;
-  const dano = dmgBase() * a.mult;
-  for (let i = 0; i < a.rajada; i++)
-    atirarLaser(p, p.alvo, dano * (0.92 + Math.random()*0.16), a.cor, true, false,
-      { forma:"rajada", desvio:(i - (a.rajada-1)/2) * 9, vel: 15 + i*0.9 });
+
+  /* O dano é um só e sai no primeiro clarão. As outras três rajadas são
+     enfeite: viajam e estouram, mas não tiram nada. */
+  const total = dmgBase() * a.mult;
+  atirarLaser(p, p.alvo, total, a.cor, true, false,
+    { forma:"rajada", vel: 17, desvio: (Math.random()-0.5) * 6 });
+  for (let i = 1; i < a.rajada; i++)
+    atirarLaser(p, p.alvo, 0, a.cor, true, false,
+      { forma:"rajada", visual: true, espera: i * 100, vel: 17, desvio: (Math.random()-0.5) * 6 });
+
   p.alvo.agro = true;
   p.alvo.permitido = G.tempo + PERMISSAO_REVIDE;
   quebrarCamuflagem();
@@ -1761,14 +1832,23 @@ function numeroDano(x, y, txt, cor) {
   });
 }
 
-function aplicarDano(en, dano) {
+function aplicarDano(en, dano, semNumero) {
   en.ultimoDano = G.tempo;
   // atacar libera o revide por alguns segundos, mesmo na zona segura
   en.permitido = G.tempo + PERMISSAO_REVIDE;
   en.agro = true;
   const abs = Math.min(en.sh, dano);
   en.sh -= abs; dano -= abs; en.hp -= dano;
-  numeroDano(en.x, en.y - 28, "-" + fmt(abs + dano), "#ffe08a");
+  if (!semNumero) numeroDano(en.x, en.y - 28, "-" + fmt(abs + dano), "#ffe08a");
+}
+
+/* fecha a conta de uma salva e mostra um número só */
+function fecharSalva(s, x, y) {
+  if (!s || s.fechada) return;
+  if (--s.restantes > 0) return;
+  s.fechada = true;
+  if (s.total > 0) numeroDano(x != null ? x : s.x, (y != null ? y : s.y) - 28,
+                              "-" + fmt(s.total), s.cor || "#ff5ad0");
 }
 
 function matarInimigo(en) {
@@ -2073,7 +2153,7 @@ function desenhar(t) {
 
   const p = G.player;
   for (const en of G.inimigos) desenharInimigo(en, t);
-  for (const b of G.tiros) desenharTiro(b, t);
+  for (const b of G.tiros) if (!(b.espera > 0)) desenharTiro(b, t);
 
   desenharDrones(t);
   if (!G.morto) {
@@ -2162,8 +2242,8 @@ function desenharTiro(b, t) {
     return;
   }
 
-  const comp = b.forma === "missil" ? 18 : b.forma === "rajada" ? 20 : b.foguete ? 16 : 13;
-  const larg = b.forma === "missil" ? 3.8 : b.forma === "rajada" ? 3.4 : b.foguete ? 4 : 2.4;
+  const comp = b.forma === "missil" ? 18 : b.forma === "rajada" ? 44 : b.foguete ? 16 : 13;
+  const larg = b.forma === "missil" ? 3.8 : b.forma === "rajada" ? 7 : b.foguete ? 4 : 2.4;
   ctx.save();
   ctx.translate(b.x, b.y); ctx.rotate(b.ang);
 
@@ -2615,7 +2695,7 @@ function celulaBarra(cel, r, c) {
     const a = AMMO[cel.id];
     if (!a) return `<div class="ab vazio">${tec}</div>`;
     const qtd = a.infinita ? "∞" : fmt(G.municao[cel.id] || 0);
-    const dica = a.rajada ? `rajada de ${a.rajada} · esfria ${a.cd/1000}s`
+    const dica = a.rajada ? `1 tiro em ${a.rajada} rajadas · esfria ${a.cd/1000}s`
                : a.rouba  ? "rouba escudo" : "dano ×" + a.mult;
     return `<div class="ab tiro ${!a.rajada && G.ammoSel === cel.id ? "on" : ""}" id="ab_ammo_${cel.id}" ${abre}
       title="${a.nome} — ${dica} · atalho ${teclaDaCelula(r,c)}">
@@ -2633,7 +2713,9 @@ function celulaBarra(cel, r, c) {
     const pr = PROJETEIS[cel.id];
     if (!pr) return `<div class="ab vazio">${tec}</div>`;
     const n = misseisPorSalva();
-    return `<div class="ab salva ${G.projetilSel === cel.id ? "on" : ""}" id="ab_proj_${cel.id}" ${abre}
+    const sel = G.projetilSel === cel.id;
+    return `<div class="ab salva ${sel ? "on" : ""}" id="ab_proj_${cel.id}" ${abre}
+      style="color:${pr.cor};border-color:${sel ? pr.cor : "rgba(255,255,255,.28)"}"
       title="${pr.nome} — salva de ${n || 0} × ${fmt(pr.dmg)} · atalho ${teclaDaCelula(r,c)}">
       ${tec}<div>❂</div><small>${fmt(G.projeteis[cel.id] || 0)}</small><div class="cd hidden"></div></div>`;
   }
@@ -2790,14 +2872,27 @@ function abrirEditorBarra() {
     </div>`);
 }
 
+/* Indicador do lança-mísseis: uma bolinha por tubo, acendendo conforme carrega,
+   na cor do projétil selecionado. */
+function indicadorLancador() {
+  const n = misseisPorSalva();
+  if (!n) return "";
+  const lanc = (G.equip.lancador || []).map(id => ITEMS.lancador[id] && ITEMS.lancador[id].nome)
+                                       .filter(Boolean).join(" + ");
+  return `<div class="lancIndic" id="lancIndic" onclick="dispararLancador()"
+    title="${lanc} — ${n} mísseis por salva">
+    <div class="lancDots">${Array.from({length:n}, (_,i) => `<i id="lancDot${i}"></i>`).join("")}</div>
+    <small id="lancTxt">salva</small></div>`;
+}
+
 function montarBarraHab() {
   if (!G || !Array.isArray(G.barra)) return;
   el("abilityBar").innerHTML =
     `<div class="abRows">` +
       G.barra.map((row, r) => `<div class="abRow">` +
         row.map((cel, c) => celulaBarra(cel, r, c)).join("") + `</div>`).join("") +
-    `</div>
-     <div class="abGear" onclick="abrirEditorBarra()" title="Editar a barra">
+    `</div>` + indicadorLancador() +
+    `<div class="abGear" onclick="abrirEditorBarra()" title="Editar a barra">
        <svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor"
             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
          <circle cx="12" cy="12" r="3.2"></circle>
@@ -2940,6 +3035,29 @@ function atualizarHUD() {
 
   for (const k of PROJ_ORDER)
     marcarCd(el("ab_proj_" + k), (p.lancCd || 0) - G.tempo, G.projetilSel === k);
+
+  // bolinhas do lança-mísseis acendendo conforme a carga
+  const nTubos = misseisPorSalva();
+  if (nTubos && el("lancIndic")) {
+    const cd = cargaLancador();
+    const resta = (p.lancCd || 0) - G.tempo;
+    const prog = resta <= 0 ? 1 : Math.max(0, 1 - resta/cd);
+    const cor = (PROJETEIS[G.projetilSel] || {}).cor || "#ff5ad0";
+    const acesas = prog >= 1 ? nTubos : Math.floor(prog * nTubos);
+    for (let i = 0; i < nTubos; i++) {
+      const d = el("lancDot" + i); if (!d) continue;
+      const on = i < acesas;
+      d.style.background = on ? cor : "transparent";
+      d.style.borderColor = on ? cor : "rgba(255,255,255,.25)";
+      d.style.boxShadow = on ? "0 0 7px " + cor : "none";
+    }
+    const txt = el("lancTxt");
+    if (txt) {
+      const falta = (G.projeteis[G.projetilSel] || 0) < nTubos;
+      txt.textContent = falta ? "sem munição" : (prog >= 1 ? "pronta" : (resta/1000).toFixed(1) + "s");
+      txt.style.color = falta ? "#ff9a9a" : (prog >= 1 ? cor : "#8fb4dc");
+    }
+  }
 }
 
 function toggleFullscreen() {
@@ -3080,11 +3198,11 @@ function detalheLoja() {
   else if (cat === "ammo") {
     const a = AMMO[id];
     nome = a.nome;
-    desc = a.rajada ? `Disparo avulso: solta uma rajada de ${a.rajada} tiros laranja de uma vez e esfria por ${a.cd/1000} segundos. Gasta ${a.rajada} unidades por rajada.`
+    desc = a.rajada ? `Disparo avulso de um dano só, que sai como ${a.rajada} rajadas laranja grossas em sequência. Gasta uma unidade e esfria por ${a.cd/1000} segundos.`
          : a.rouba  ? `Tiros circulares azuis que não ferem o casco: drenam o escudo do inimigo e transferem para o seu.`
          : `Munição de canhão. Multiplica o dano de cada tiro por ${a.mult}, e some conforme você atira.`;
     info = linha("Multiplicador de dano", "×" + a.mult) +
-           (a.rajada ? linha("Rajada", a.rajada + " tiros · " + a.cd/1000 + "s de espera") : "") +
+           (a.rajada ? linha("Disparo", "1 tiro em " + a.rajada + " rajadas · " + a.cd/1000 + "s de espera") : "") +
            (a.rouba ? linha("Efeito", "rouba escudo em vez de ferir") : "") +
            linha("Acionar", "pelo espaço dela na barra") +
            linha("No porão", a.infinita ? "ilimitada" : fmt(G.municao[id] || 0));
@@ -3994,7 +4112,7 @@ function openHelp() {
     <div class="row"><div class="val">Q / E / F</div><div class="muted">reparo · sobrecarga · camuflagem</div></div>
     <div class="row"><div class="val">Barra de ação</div><div class="muted">duas fileiras de 8 espaços no rodapé. A engrenagem ao lado abre o editor: clique num espaço para esvaziar e num item da lista para encaixar. Munição e foguete na barra ficam destacados quando estão em uso — clicar neles seleciona</div></div>
     <div class="row"><div class="val">Lança-mísseis</div><div class="muted">um por nave, no encaixe logo abaixo dos canhões: o LM-45 solta 3 mísseis por salva e o LM-100 solta 5, com 5s de recarga. Usam projéteis próprios — 1122 com 3.500 de dano cada, 2540 com 5.000 e 3030 com 6.500. Coloque o projétil na barra: clicar nele escolhe e já lança a salva, que sai em leque e curva até o alvo</div></div>
-    <div class="row"><div class="val">Módulos</div><div class="muted">quarto tipo de equipamento, com encaixe próprio na nave: MX-Míssil é passivo e lança sozinho o foguete escolhido na barra enquanto você ataca; EMP-9 é acionado por você e cega os inimigos por perto por 3s; Véu-7 (tecla V) te deixa invisível até você atacar; Supernova (tecla X) explode em área</div></div>
+    <div class="row"><div class="val">Módulos</div><div class="muted">quarto tipo de equipamento, com encaixe próprio na nave: MX-Míssil é passivo e, enquanto você ataca, lança sozinho tanto o foguete escolhido quanto a salva do lança-mísseis; EMP-9 é acionado por você e cega os inimigos por perto por 3s; Véu-7 (tecla V) te deixa invisível até você atacar; Supernova (tecla X) explode em área</div></div>
     <div class="row"><div class="val">Carrinho (LOJA)</div><div class="muted">só compra, e funciona de qualquer lugar do mapa: naves, canhões, escudos, motores, módulos, munição, foguetes, drones, melhorias e Skylab (tecla B)</div></div>
     <div class="row"><div class="val">Chave (EQUIP)</div><div class="muted">abre em qualquer lugar para consultar, mas encaixar, tirar, vender e reparar só atracado na estação (tecla N)</div></div>
     <div class="row"><div class="val">C</div><div class="muted">troca entre a configuração 1 e a 2, o mesmo que clicar na engrenagem</div></div>
