@@ -2888,7 +2888,9 @@ function desenharFundo(t, tre) {
 function luzDaNave(t) {
   const p = G.player;
   if (invisivel()) return;
-  const r = (G.nave === "tita" && spritePronto()) ? TITA_TAM * 0.78 : 46;
+  const sp = spriteDaNave(G.nave);
+  const r = (G.nave === "tita" && spritePronto()) ? TITA_TAM * 0.78
+          : sp ? sp.tam * 0.82 : 46;
   const forte = p.movendo ? 1 : 0.55;
   const gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
   gr.addColorStop(0, `rgba(255,190,130,${0.16*forte})`);
@@ -2996,7 +2998,9 @@ function desenhar(t) {
   if (!G.morto) luzDaNave(t);
   if (!G.morto) {
     ctx.globalAlpha = invisivel() ? 0.4 : 1;
+    const sp = spriteDaNave(G.nave);
     if (G.nave === "tita" && spritePronto()) desenharTita(p.x, p.y, p.ang, t);
+    else if (sp) desenharNaveSprite(sp, p.x, p.y, p.ang, t);
     else desenharNave(p.x, p.y, p.ang, G.cor, 16);
     ctx.globalAlpha = 1;
     if (invulneravel()) {                       // bolha de proteção pós-ressurreição
@@ -3125,7 +3129,7 @@ function desenharTiro(b, t) {
 /* A Titã é desenhada com o sprite; as outras naves seguem no vetor de sempre. */
 function desenharTita(x, y, ang, t) {
   const p = G.player;
-  const q = clamp(TITA_MEIO + Math.round(inclinacaoTita * TITA_MEIO), 0, TITA_QUADROS - 1);
+  const q = clamp(Math.round(TITA_MEIO + inclinacaoTita * TITA_MEIO), 0, TITA_QUADROS - 1);
   const esc = TITA_TAM / TITA_LARG;
   const w = TITA_LARG * esc, h = TITA_ALT * esc;
 
@@ -3148,6 +3152,34 @@ function desenharTita(x, y, ang, t) {
     ctx.globalAlpha = 0.55 * (1 - desde/260);
     ctx.globalCompositeOperation = "lighter";
     ctx.drawImage(spriteTita, q * TITA_LARG, 0, TITA_LARG, TITA_ALT, -w/2, -h/2, w, h);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+/* As demais naves usam uma figura só. A inclinação na curva vem de achatar
+   o sprite na vertical e empurrar de leve para o lado, o que engana bem o
+   olho num jogo visto de cima. */
+function desenharNaveSprite(s, x, y, ang, t) {
+  const p = G.player;
+  const w = s.tam, h = s.tam * s.img.naturalHeight / s.img.naturalWidth;
+  const inc = inclinacaoTita;                     // −1 a 1, mesma leitura de giro
+  const achata = 1 - Math.abs(inc) * 0.24;
+  const respiro = !p.movendo ? 1 + Math.sin(t/620)*0.018 : 1;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  ctx.scale(respiro, respiro);
+  chamaDoMotor(w, h, t);
+  ctx.transform(1, 0, inc * 0.20, achata, 0, 0);  // cisalha e achata: vira a barriga
+  ctx.drawImage(s.img, -w/2, -h/2, w, h);
+  const desde = G.tempo - (p.ultimoDano || -9999);
+  if (desde < 260) {
+    ctx.globalAlpha = 0.55 * (1 - desde/260);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.drawImage(s.img, -w/2, -h/2, w, h);
     ctx.globalCompositeOperation = "source-over";
     ctx.globalAlpha = 1;
   }
@@ -3191,21 +3223,40 @@ function desenharNave(x,y,ang,cor,tam) {
 
 /* ---------------------------------------------------------------------------
    SPRITE DA TITÃ
-   Vista de cima, que é a que combina com o resto do jogo. São sete quadros da
-   mesma nave, girando de −30° a +30° sobre o próprio eixo, que é o que faz ela
-   deitar na curva. O modelo 3D só
+   Vista de cima com um tombo de 18° e perspectiva leve, para casar com a
+   Faísca. São 33 quadros da mesma nave, girando de −45° a +45° sobre o próprio
+   eixo em passos de 2,8°, o que deixa a curva bem lisa. O modelo 3D só
    serviu para gerar essas figuras aqui fora: o jogo continua 2D e nunca carrega
    modelo nenhum. Sem o arquivo ao lado do HTML, ela volta ao desenho vetorial.
    Modelo "Red Goliath Spaceship" de Harold.Llanos (Sketchfab), CC-BY-4.0.
 --------------------------------------------------------------------------- */
-const TITA_QUADROS = 7;
-const TITA_LARG = 102, TITA_ALT = 66;
-const TITA_MEIO  = (TITA_QUADROS - 1) >> 1;    // índice do quadro reto
-const TITA_PASSO = 10;                         // graus de inclinação entre quadros
-const TITA_TAM   = 78;                         // largura com que ela é desenhada
+const TITA_QUADROS = 33;                       // ímpar: existe um quadro exatamente reto
+const TITA_LARG = 104, TITA_ALT = 70;
+const TITA_MEIO  = (TITA_QUADROS - 1) / 2;     // meio da tira: o quadro reto
+const TITA_PASSO = 90 / (TITA_QUADROS - 1);    // graus de inclinação entre quadros
+const TITA_TAM   = 92;                         // largura com que ela é desenhada
 const spriteTita = new Image();
 spriteTita.src = "nave-tita.png";
 const spritePronto = () => spriteTita.complete && spriteTita.naturalWidth > 0;
+
+/* As outras quatro têm uma figura só, sem quadros de inclinação — a curva
+   delas é feita deformando o sprite na hora de desenhar. Faltando o arquivo,
+   a nave cai no desenho vetorial de antes. */
+const SPRITE_NAVE = {
+  faisca:     { arq:"nave-faisca.png",     tam: 52 },
+  lamina:     { arq:"nave-lamina.png",     tam: 62 },
+  sentinela:  { arq:"nave-sentinela.png",  tam: 74 },
+  devastador: { arq:"nave-devastador.png", tam: 78 },
+};
+for (const id in SPRITE_NAVE) {
+  const im = new Image();
+  im.src = SPRITE_NAVE[id].arq;
+  SPRITE_NAVE[id].img = im;
+}
+const spriteDaNave = id => {
+  const s = SPRITE_NAVE[id];
+  return (s && s.img.complete && s.img.naturalWidth > 0) ? s : null;
+};
 
 /* Quanto ela deita na curva: a inclinação persegue a velocidade de giro e
    volta ao zero na reta. Guardado fora do save, é só enfeite. */
@@ -3223,8 +3274,10 @@ function alimentarRastro(dt) {
   if (!p) return;
   if (p.movendo && !invisivel() && !G.morto) {
     const tras = p.ang + Math.PI;
-    const d = (G.nave === "tita" && spritePronto()) ? TITA_TAM * 0.44 : 15;
-    for (const lado of (G.nave === "tita" ? [-1, 1] : [0])) {
+    const sp = spriteDaNave(G.nave);
+    const d = (G.nave === "tita" && spritePronto()) ? TITA_TAM * 0.44
+            : sp ? sp.tam * 0.44 : 15;
+    for (const lado of ((G.nave === "tita" || sp) ? [-1, 1] : [0])) {
       rastro.push({
         x: p.x + Math.cos(tras) * d + Math.cos(tras + Math.PI/2) * lado * 9,
         y: p.y + Math.sin(tras) * d + Math.sin(tras + Math.PI/2) * lado * 9,
@@ -5564,7 +5617,7 @@ function openHelp() {
     <div class="row"><div class="val">Minimapa</div><div class="muted">clique (ou clique e arraste) no minimapa para viajar até aquele ponto</div></div>
     <div class="row"><div class="val">Morte</div><div class="muted">a tela escurece e mostra quem te abateu: 500 cr para ser resgatado até a base, chegando com casco e escudo zerados e recuperando na doca, ou 1.000 cr para reviver no lugar com metade do casco e metade do escudo da configuração ativa, intocável por 3s</div></div>
     <div class="row"><div class="val">Hangar</div><div class="muted">começa com 1 espaço. No painel Equipamentos, o quadrado com <b>+</b> compra mais um espaço, até 5. Comprando uma nave com o hangar lotado, o jogo pede confirmação e depois mostra as suas naves para você escolher qual sai. Nave repetida não entra</div></div>
-    <div class="row"><div class="val">Visual da Titã</div><div class="muted">a Titã usa uma figura pronta em vez do desenho vetorial: sete quadros da mesma nave vista de cima, girando de −30° a +30° sobre o próprio eixo. Ela deita para o lado enquanto você faz a curva, solta chama pelos motores conforme a velocidade, deixa uma esteira ao acelerar, respira de leve quando está parada e acende quando o escudo apanha. Se o arquivo <b>nave-tita.png</b> não estiver na mesma pasta do jogo, ela volta sozinha para o desenho antigo</div></div>
+    <div class="row"><div class="val">Visual das naves</div><div class="muted">todas as cinco usam figura pronta em vez do desenho vetorial. A Faísca, a Lâmina, a Sentinela e o Devastador têm uma imagem cada, e a inclinação na curva é feita achatando e cisalhando o sprite na hora. A Titã tem sete quadros da mesma nave vista de cima, girando de −30° a +30° sobre o próprio eixo. Ela deita para o lado enquanto você faz a curva, solta chama pelos motores conforme a velocidade, deixa uma esteira ao acelerar, respira de leve quando está parada e acende quando o escudo apanha. Se algum dos arquivos <b>nave-*.png</b> não estiver na mesma pasta do jogo, aquela nave volta sozinha para o desenho antigo</div></div>
     <div class="row"><div class="val">Efeitos visuais</div><div class="muted">o fundo tem nebulosa e estrelas em várias profundidades, que andam em velocidades diferentes, mais um corpo distante por setor. A nave espalha luz em volta e acende os motores; os tiros somam brilho em vez de tapar o fundo. Explosões soltam estilhaços e anéis de choque, e a tela treme conforme a distância do estouro e o tamanho da pancada que você levou. Acelerando, riscos de poeira passam para trás dando a sensação de velocidade. A câmera fica presa na nave: ela só se mexe na tremida</div></div>
     <div class="row"><div class="val">Créditos</div><div class="muted">a figura da Titã foi gerada a partir do modelo <b>Red Goliath Spaceship</b>, de Harold.Llanos no Sketchfab, sob licença CC-BY-4.0</div></div>
     <div class="foot"><button onclick="fecharModal()">Entendi</button></div>`);
