@@ -10,6 +10,8 @@
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; overflow: hidden; background: #04060f; }
   body { font-family: "Segoe UI", system-ui, sans-serif; color: #cfe3ff; user-select: none; -webkit-tap-highlight-color: transparent; }
+  /* campos de texto continuam selecionáveis, senão não dá para editar o que já está escrito */
+  input, textarea { user-select: text; -webkit-user-select: text; }
   #wrap { position: relative; width: 100%; height: 100vh; min-height: 520px; }
   canvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
 
@@ -50,7 +52,16 @@
              background: #7ec8ff; transition: width .1s linear; }
   .cfgBtn.carregando #cfgFill { background: #ffd166; }
 
-  #gainPanel { top: 168px; left: 8px; width: 214px; display: none; padding: 7px 10px; }
+  /* card do pet, logo abaixo do card do piloto */
+  #petCard { top: 168px; left: 8px; width: 214px; display: none; padding: 7px 10px; }
+  #petCard .topo { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+  #petCard .bar { margin-top: 3px; }
+  .petLigar { cursor: pointer; border-radius: 6px; padding: 3px 8px; font-size: 10px; font-weight: 700;
+              letter-spacing: .06em; border: 1px solid rgba(126,232,255,.5); color: #7ee8ff;
+              background: rgba(110,200,255,.14); flex: none; }
+  .petLigar:hover { background: rgba(110,200,255,.3); }
+  .petLigar.off { border-color: rgba(255,255,255,.25); color: #7b9ac0; background: rgba(255,255,255,.06); }
+  #gainPanel { top: 262px; left: 8px; width: 214px; display: none; padding: 7px 10px; }
   .ganhoLinha { font-size: 11px; line-height: 1.45; padding: 3px 0;
                 border-bottom: 1px solid rgba(255,255,255,.06); }
   .ganhoLinha:last-child { border-bottom: none; }
@@ -114,6 +125,7 @@
   .hpF { background: linear-gradient(90deg,#ff4d5e,#ff9068); }
   .shF { background: linear-gradient(90deg,#2f8fff,#63e6ff); }
   .xpF { background: linear-gradient(90deg,#b06bff,#ff8ad4); }
+  .vdF { background: linear-gradient(90deg,#2ea05f,#61e08a); }   /* vida do pet, em verde */
   .hoF { background: linear-gradient(90deg,#ff8a3d,#ffd166); }
 
   button { font-family: inherit; font-size: 12px; color: #d7e9ff; cursor: pointer;
@@ -274,6 +286,25 @@
     <div class="muted" id="ammoTxt">—</div>
   </div>
 
+  <div class="panel" id="petCard">
+    <div class="topo">
+      <div>
+        <div><span class="val" id="petNome" style="color:#61e08a">Pet</span></div>
+        <div class="lbl" id="petNivel">nível 1</div>
+      </div>
+      <div class="petLigar" id="petBtn" onclick="alternarPet()">LIGADO</div>
+    </div>
+    <div class="bar"><i class="vdF" id="petHpBar" style="width:0%"></i></div>
+    <div class="muted" id="petHpTxt">—</div>
+    <div class="bar"><i class="shF" id="petShBar" style="width:0%"></i></div>
+    <div class="muted" id="petShTxt">—</div>
+    <div class="bar"><i class="xpF" id="petXpBar" style="width:0%"></i></div>
+    <div class="muted" id="petXpTxt">—</div>
+    <div id="petConserto" style="display:none;margin-top:6px">
+      <button class="mini primary" onclick="consertarPet()">Consertar — 5.000 cr</button>
+    </div>
+  </div>
+
   <div class="panel" id="gainPanel"></div>
 
   <div class="panel" id="sectorName">—</div>
@@ -386,7 +417,8 @@ const CARENCIA_FORA = 3000;    // tempo antes de o dano começar
 /* a ordem aqui é a ordem das seções na tela: o lança-mísseis vem logo
    depois dos canhões */
 const CATS = ["laser","lancador","gerador","modulo"];
-const CATEGORIA = { laser:"laser", escudo:"gerador", motor:"gerador", modulo:"modulo", lancador:"lancador" };
+const CATEGORIA = { laser:"laser", escudo:"gerador", motor:"gerador", modulo:"modulo",
+                    lancador:"lancador", petmod:"petmod" };
 const TITULO_CAT = { laser:"Canhões", gerador:"Geradores (escudo ou motor)",
                      modulo:"Módulos", lancador:"Lança-mísseis" };
 
@@ -410,6 +442,9 @@ const ITEMS = {
     MT3:{ nome:"MT-3", spd:0.15, preco:46000 },
   },
   /* Lança-mísseis: encaixe próprio. Dispara uma salva do projétil selecionado. */
+  /* Módulos de pet: encaixe exclusivo do pet. Catálogo ainda vazio —
+     é só acrescentar as entradas aqui quando os módulos forem definidos. */
+  petmod: {},
   lancador: {
     LM45:  { nome:"LM-45",  misseis:3, cd:5000, preco:180000,
              desc:"Lança 3 mísseis de uma vez. Precisa de 5 segundos carregando entre as salvas." },
@@ -439,7 +474,8 @@ const MODULOS = {
 };
 
 /* Munição. As comuns são de tiro contínuo enquanto você ataca.
-   RSB-300 é de disparo avulso: solta uma rajada de 4 e esfria.
+   RSB-300 fica selecionada como as outras, mas tem ritmo próprio: solta uma
+   rajada de 4, esfria e sai de novo sozinha enquanto você estiver atacando.
    DRNO-25 não fere o casco: rouba o escudo do inimigo e passa para o seu. */
 const AMMO = {
   lcb10:  { nome:"LCB-10",  mult:1,   preco:0,   infinita:true },
@@ -533,8 +569,8 @@ const DRONE_TIPOS = {
   hercules: { nome: "Hercules",     slots: 2, preco: 3000000, cor: "#ff5a5a", unico: true, lado: -1 },
   zeus:     { nome: "Zeus",         slots: 2, preco: 3000000, cor: "#4cc9ff", unico: true, lado:  1 },
 };
-/* os únicos voam ao lado da nave, um pouco atrás da coluna dos comuns */
-const POS_LATERAL = { "-1": { fx: -34, fy: -132 }, "1": { fx: -34, fy: 132 } };
+/* cada formação diz onde os únicos voam; na normal ficam ao lado da nave */
+const posUnico = lado => defFormacao().unicos[lado < 0 ? 0 : 1];
 /* O limite de 8 vale só para os drones comuns. Hercules e Zeus são únicos,
    um de cada, e ficam por fora — com todos comprados a frota chega a 10. */
 const DRONE_UNICOS = Object.keys(DRONE_TIPOS).filter(k => DRONE_TIPOS[k].unico);
@@ -548,56 +584,177 @@ const droneCusto = (tipo, n) => ehUnico(tipo)
   ? DRONE_TIPOS[tipo].preco
   : Math.round(DRONE_TIPOS[tipo].preco * Math.pow(n + 1, 1.35));
 
-/* Formação desenhada pelo jogador (nave apontando para a direita):
-
-        .................-
-        .....-...........-
-        -.......-........*
-        .....-...........-
-        .................-
-
+/* ---------------------------------------------------------------------------
+   FORMAÇÕES DE DRONE
    Coordenadas locais: fx = frente(+)/trás(−), fy = direita(+)/esquerda(−).
-   Com menos de 8 drones as posições são um subconjunto simétrico dessa mesma
-   figura, para a formação nunca ficar torta. */
-/* Formação dos drones comuns, do desenho do jogador (nave apontando à direita):
+   Cada formação é descrita por pares espelhados (um fy e o seu simétrico) e,
+   quando precisa, por posições centrais em fy = 0. Assim qualquer quantidade
+   par de drones cai numa figura simétrica sozinha.
+   Só vale a partir de 6 drones; abaixo disso a nave sempre voa na normal.
+--------------------------------------------------------------------------- */
+const FORMACAO_MIN = 6;
+const FORMACAO_ESPERA = 5000;   // 5s entre uma troca e a próxima
 
-        .................-
-        .....-...........-
-        -.......-........*
-        .....-...........-
-        .................-
+/* a normal é a que o jogador desenhou primeiro: coluna de quatro ao lado
+   da nave e uma cruz perfeita de quatro bem atrás */
+const CRUZ_CENTRO = -160;
+const CRUZ_BRACO  = 52;
+const COLUNA_INT  = 106;
+const COLUNA_EXT  = 168;
 
-   Uma coluna de quatro ao lado da nave, um par recuado no meio, um logo
-   atrás e outro bem mais atrás. Com menos drones, usa um subconjunto
-   simétrico da mesma figura. */
-/* O grupo de trás é uma cruz perfeita: quatro drones à mesma distância de um
-   centro, um em cada direção. A coluna lateral fica bem aberta nos dois lados. */
-const CRUZ_CENTRO = -160;   // onde fica o meio da cruz, atrás da nave
-const CRUZ_BRACO  = 52;     // distância igual dos quatro braços
-const COLUNA_INT  = 106;    // par interno da coluna lateral
-const COLUNA_EXT  = 168;    // par externo (mesmo vão de 62 entre os pares)
-
-const P = {
-  cruzF: { fx: CRUZ_CENTRO + CRUZ_BRACO, fy: 0 },
-  cruzT: { fx: CRUZ_CENTRO - CRUZ_BRACO, fy: 0 },
-  cruzA: { fx: CRUZ_CENTRO, fy: -CRUZ_BRACO },
-  cruzB: { fx: CRUZ_CENTRO, fy:  CRUZ_BRACO },
-  ladoA: { fx: 0, fy: -COLUNA_INT },
-  ladoB: { fx: 0, fy:  COLUNA_INT },
-  ladoC: { fx: 0, fy: -COLUNA_EXT },
-  ladoD: { fx: 0, fy:  COLUNA_EXT },
-};
 const FORMACOES = {
-  1: [P.cruzF],
-  2: [P.ladoA, P.ladoB],
-  3: [P.cruzF, P.ladoA, P.ladoB],
-  4: [P.cruzF, P.cruzT, P.cruzA, P.cruzB],                       // a cruz completa
-  5: [P.cruzF, P.cruzT, P.cruzA, P.cruzB, P.ladoA],
-  6: [P.cruzF, P.cruzT, P.cruzA, P.cruzB, P.ladoA, P.ladoB],
-  7: [P.cruzF, P.cruzT, P.cruzA, P.cruzB, P.ladoA, P.ladoB, P.ladoC],
-  8: [P.cruzF, P.cruzT, P.cruzA, P.cruzB, P.ladoA, P.ladoB, P.ladoC, P.ladoD],
+  normal: {
+    nome: "Normal", cor: "#9fb2c9", preco: 0,
+    desc: "A formação de sempre: coluna de quatro ao lado da nave e uma cruz de quatro atrás. Sem bônus.",
+    pares: [[0, COLUNA_INT], [0, COLUNA_EXT], [CRUZ_CENTRO, CRUZ_BRACO]],
+    centro: [{ fx: CRUZ_CENTRO + CRUZ_BRACO, fy: 0 }, { fx: CRUZ_CENTRO - CRUZ_BRACO, fy: 0 }],
+    ordem: ["c0", "c1", "p2", "p0", "p1"],
+    /* com poucos drones a normal segue o ajuste que o jogador pediu:
+       com 4 ela fecha a cruz, com 2 e 3 o par vai para o lado da nave */
+    excecoes: { 2: [4, 5], 3: [0, 4, 5], 5: [0, 1, 2, 3, 4] },
+    unicos: [{ fx: -34, fy: -132 }, { fx: -34, fy: 132 }],
+  },
+  ataque: {
+    nome: "Ataque", cor: "#ff7a4d", preco: 1500000,
+    bonus: { chave: "laser", pct: 0.10, texto: "+10% de dano de canhão" },
+    desc: "Leque aberto à frente com os únicos na ponta e, atrás, quatro drones abrindo num V — o par da frente junto e o de trás bem separado.",
+    pares: [[80, 40], [80, 120], [-80, 22], [-155, 82]],
+    unicos: [{ fx: 150, fy: -100 }, { fx: 150, fy: 100 }],
+  },
+  alvo: {
+    nome: "Alvo", cor: "#ffd166", preco: 1500000,
+    bonus: { chave: "missil", pct: 0.10, texto: "+10% de dano de míssil e foguete" },
+    desc: "Cone de mira: os únicos vão na frente como ponta e os comuns abrem para trás em pares cada vez mais largos.",
+    pares: [[75, 80], [-40, 105], [-140, 150], [-215, 180]],
+    unicos: [{ fx: 145, fy: -30 }, { fx: 145, fy: 30 }],
+  },
+  protetora: {
+    nome: "Protetora", cor: "#4cc9ff", preco: 1500000,
+    bonus: { chave: "escudo", pct: 0.10, texto: "+10% de escudo sobre o total" },
+    desc: "Anel fechado em volta da nave, com os únicos guardando as duas frentes.",
+    pares: [[99, 99], [0, 140], [-99, 99]],
+    centro: [{ fx: 140, fy: 0 }, { fx: -140, fy: 0 }],
+    ordem: ["p0", "p1", "p2", "c0", "c1"],
+    unicos: [{ fx: 162, fy: -67 }, { fx: 162, fy: 67 }],
+  },
+  caranguejo: {
+    nome: "Caranguejo", cor: "#ff5a5a", preco: 1500000,
+    bonus: { chave: "honra", pct: 0.10, texto: "+10% de honra obtida" },
+    desc: "Os dois únicos viram as pinças bem abertas à frente; os comuns fazem os ombros, as patas e a cauda.",
+    pares: [[185, 95], [60, 150], [-60, 130], [-150, 60]],
+    unicos: [{ fx: 150, fy: -180 }, { fx: 150, fy: 180 }],
+  },
+  barreira: {
+    nome: "Barreira", cor: "#8affd8", preco: 1500000,
+    bonus: { chave: "xp", pct: 0.10, texto: "+10% de XP" },
+    desc: "Duas fileiras à frente da nave, feito um muro, com os únicos nas pontas.",
+    pares: [[155, 40], [100, 75], [155, 120], [100, 155]],
+    unicos: [{ fx: 128, fy: -205 }, { fx: 128, fy: 205 }],
+  },
 };
-const formacaoAtual = n => FORMACOES[clamp(n, 1, DRONE_MAX)] || FORMACOES[DRONE_MAX];
+const FORMACAO_ORDEM = ["normal", "ataque", "alvo", "protetora", "caranguejo", "barreira"];
+
+/* Expande os pares/centros na ordem certa. O resultado é sempre a mesma
+   figura, cortada no número de drones que a nave tem. */
+function pontosFormacao(def) {
+  if (def._pontos) return def._pontos;
+  const pares = (def.pares || []).map(([fx, fy]) => [{ fx, fy: -fy }, { fx, fy }]);
+  const centro = def.centro || [];
+  const ordem = def.ordem || pares.map((_, i) => "p" + i).concat(centro.map((_, i) => "c" + i));
+  const saida = [];
+  for (const chave of ordem) {
+    const i = +chave.slice(1);
+    if (chave[0] === "p" && pares[i]) saida.push(pares[i][0], pares[i][1]);
+    if (chave[0] === "c" && centro[i]) saida.push(centro[i]);
+  }
+  def._pontos = saida;
+  return saida;
+}
+
+/* qual formação está de fato valendo: precisa estar comprada, escolhida
+   e a nave precisa ter drones suficientes */
+function formacaoAtiva() {
+  const id = G.formacaoSel || "normal";
+  if (id === "normal") return "normal";
+  if (!FORMACOES[id]) return "normal";
+  if (!(G.formacoes || []).includes(id)) return "normal";
+  if (G.drones.length < FORMACAO_MIN) return "normal";
+  return id;
+}
+const defFormacao = () => FORMACOES[formacaoAtiva()];
+const temFormacao = id => id === "normal" || (G.formacoes || []).includes(id);
+
+/* o bônus só conta com a formação valendo de verdade */
+function bonusFormacao(chave) {
+  const b = defFormacao().bonus;
+  return (b && b.chave === chave) ? b.pct : 0;
+}
+
+function formacaoAtual(n) {
+  const def = defFormacao(), pts = pontosFormacao(def);
+  n = clamp(n, 0, DRONE_MAX);
+  const ex = def.excecoes && def.excecoes[n];        // recortes escolhidos à mão
+  return ex ? ex.map(i => pts[i]) : pts.slice(0, n);
+}
+
+/* ---------------------------------------------------------------------------
+   PET
+   Voa com a nave, entra no ataque junto com você, atira e rodeia o inimigo.
+   Sobe do nível 1 ao 15 ganhando o mesmo XP que você. Cada faixa de nível
+   abre mais vida e mais encaixes. Usa as mesmas peças da nave e dos drones:
+   canhão e escudo saem do mesmo depósito, sem duplicar nada.
+--------------------------------------------------------------------------- */
+const PET_NIVEL_MAX = 15;
+const PET_PRECO     = 2000000;
+const PET_CONSERTO  = 5000;     // cr para levantar o pet depois de destruído
+const PET_VOLTA_HP  = 1000;     // e com quanto ele volta: casco...
+const PET_VOLTA_SH  = 1000;     // ...e escudo
+const PET_COR       = "#ff9de0";
+const PET_VEL       = 5.6;      // px por quadro fora do modo de seguir (combate e pouso)
+const PET_ALCANCE   = 700;
+const PET_CADENCIA  = 700;      // ms entre um tiro e outro
+const PET_POUSO_MIN = 70;       // ele estaciona entre esta distância...
+const PET_POUSO_MAX = 150;      // ...e esta, num ponto sorteado ao lado da nave
+const PET_RASTRO    = 138;      // o quanto ele fica atrás da nave enquanto te segue
+const PET_ATRASO    = 1000;     // demora 1 segundo para perceber e sair atrás de você
+const PET_VAG_MIN   = 90;       // enquanto ataca, fica se mexendo entre esta distância...
+const PET_VAG_MAX   = 190;      // ...e esta do inimigo
+const PET_VAG_TROCA = [500, 1100];   // e muda de lugar nesse intervalo
+const PET_FICA      = 760;      // enquanto você estiver a menos disso do inimigo,
+                                // ele fica na briga em vez de te seguir
+/* Seguindo, ele não vem em linha reta: vai jogando de um lado para o outro
+   e mudando de ritmo, mas sempre atrás da nave. */
+const PET_ZIGUE     = 52;       // o quanto ele abre para os lados do rastro
+const PET_RECUO     = 44;       // e o quanto o rastro encurta ou estica
+/* Seguindo, a velocidade dele é a da SUA nave vezes este fator: no geral
+   emparelha com você e de vez em quando alivia e fica um pouco para trás. */
+const PET_RITMO     = [0.62, 1.04];
+const PET_ALCANCA   = 1.9;      // e sprinta assim para colar de novo quando se distancia
+const PET_ZIGUE_T   = [380, 1000];         // trocando de rumo nesse intervalo
+const PET_RITMO_T   = [280, 760];          // e de ritmo nesse
+const PET_CATS      = ["laser", "escudo", "petmod"];
+const PET_TITULO    = { laser:"Canhões", escudo:"Escudos", petmod:"Módulos de pet" };
+
+/* faixa de nível → vida e quantos encaixes de cada tipo */
+const PET_FAIXAS = [
+  { ate: 3,  hp: 50000,  laser: 2,  escudo: 3,  petmod: 2 },
+  { ate: 7,  hp: 55000,  laser: 4,  escudo: 6,  petmod: 3 },
+  { ate: 11, hp: 65000,  laser: 6,  escudo: 9,  petmod: 4 },
+  { ate: 14, hp: 80000,  laser: 10, escudo: 12, petmod: 5 },
+  { ate: 15, hp: 100000, laser: 12, escudo: 15, petmod: 6 },
+];
+const petFaixa = nv => PET_FAIXAS.find(f => clamp(nv,1,PET_NIVEL_MAX) <= f.ate) || PET_FAIXAS[PET_FAIXAS.length-1];
+
+/* XP acumulado para chegar em cada nível — o pet recebe o mesmo XP que você */
+const petXpDoNivel = nv => Math.round(1800 * Math.pow(nv - 1, 2.05));
+const PET_XP = Array.from({ length: PET_NIVEL_MAX }, (_,i) => petXpDoNivel(i + 1));
+
+function petNivel(xp) {
+  let nv = 1;
+  for (let i = 0; i < PET_XP.length; i++) if (xp >= PET_XP[i]) nv = i + 1;
+  return nv;
+}
+const petProxXp = nv => nv >= PET_NIVEL_MAX ? 0 : PET_XP[nv];
 
 const SKYLAB = {
   titanio:{ taxa:0.55, base:14000 },
@@ -684,9 +841,12 @@ function novoJogo(nome, factionId) {
     equip: { laser:[], gerador:[], modulo:[] },
     up: { laser:0, escudo:0, motor:0, coletor:0 },
     municao: { lcb20:200, mcb30:0, ucb100:0, rsb300:0, drno25:0 }, ammoSel: "lcb10",
+    calibre: "lcb10",                          // calibre que o pet acompanha
     foguetes: { R310:12, PLT21:0, PLT30:0 }, foguetSel: "R310",
     projeteis: { P1122:0, P2540:0, P3030:0 }, projetilSel: "P1122",
     drones: [],
+    formacoes: [], formacaoSel: "normal", formacaoCd: 0,   // compradas, a que vale e a espera da troca
+    pet: petNovo(),
     skylab: { titanio:1, plasma:0, cristal:0, estoque:{ titanio:0, plasma:0, cristal:0 } },
     hab: { reparo:0, sobrecarga:0, camuflagem:0 },
     buff: { sobrecarga:0, camuflagem:0 },
@@ -742,6 +902,7 @@ function normalizarEquip() {
   if (G.cfgAtiva !== 0 && G.cfgAtiva !== 1) G.cfgAtiva = 0;
   G.equip = G.configs[G.cfgAtiva];      // a ativa é a que vale para os cálculos
   normalizarDrones();
+  normalizarPet();
   ordenarEquip();
 }
 
@@ -758,6 +919,108 @@ function ordenarEquip() {
       for (const cat of CATS) arruma(cfg && cfg[cat]);
   for (const d of G.drones)
     for (const arr of (d.cfgs || [])) arruma(arr);
+  if (G.pet && Array.isArray(G.pet.cfgs))
+    for (const cfg of G.pet.cfgs)
+      for (const cat of PET_CATS) arruma(cfg && cfg[cat]);
+}
+
+/* ---- PET ---- */
+function petNovo() {
+  return {
+    tem: false, ativo: true, nivel: 1, xp: 0, nome: "Pet",
+    cfgs: [petCfgVazia(1), petCfgVazia(1)],
+    eq: null,                       // referência para a montagem em uso
+    hp: 0, sh: 0, shCfg: [], x: 0, y: 0, ang: 0,
+    alvo: null, engajado: null, pouso: null, vagueio: null, seguirEm: 0, viuAndar: false,
+    balanco: null, lado: 0, recuo: PET_RASTRO, ritmo: null, vel: 1,
+    ultimoTiro: 0, ultimoDano: -9999, abatido: false,
+  };
+}
+const petCfgVazia = nv => {
+  const f = petFaixa(nv), c = {};
+  for (const cat of PET_CATS) c[cat] = new Array(f[cat]).fill(null);
+  return c;
+};
+
+/* O pet também guarda duas montagens e troca junto com a nave. Subindo de
+   nível os encaixes aumentam; caindo, o que sobra volta para o depósito. */
+function normalizarPet() {
+  if (!G.pet || typeof G.pet !== "object") G.pet = petNovo();
+  const p = G.pet;
+  p.nivel = clamp(petNivel(p.xp || 0), 1, PET_NIVEL_MAX);
+  const f = petFaixa(p.nivel);
+  if (!Array.isArray(p.cfgs)) p.cfgs = [];
+  p.cfgs.length = 2;
+  for (let c = 0; c < 2; c++) {
+    const antigo = (p.cfgs[c] && typeof p.cfgs[c] === "object") ? p.cfgs[c] : {};
+    const novo = {};
+    for (const cat of PET_CATS) {
+      const tipos = cat === "petmod" ? ["petmod"] : [cat];
+      const guardado = (Array.isArray(antigo[cat]) ? antigo[cat] : [])
+        .filter(id => id && tipos.includes(tipoDoItem(id)));
+      novo[cat] = new Array(f[cat]).fill(null);
+      for (let i = 0; i < Math.min(f[cat], guardado.length); i++) novo[cat][i] = guardado[i];
+    }
+    p.cfgs[c] = novo;
+  }
+  p.eq = p.cfgs[G.cfgAtiva];
+  if (!Array.isArray(p.shCfg)) p.shCfg = [];
+  p.hp = clamp(p.hp || 0, 0, petMaxHp());
+  p.sh = clamp(p.sh || 0, 0, petMaxShield());
+}
+
+const petContaCfg = (cfg, id) => cfg
+  ? PET_CATS.reduce((a,cat) => a + ((cfg[cat] || []).filter(x => x === id).length), 0) : 0;
+
+/* peças que o pet reservou mas a montagem ativa não usa */
+function folgaPet(id) {
+  const p = G.pet;
+  if (!p || !p.tem || !Array.isArray(p.cfgs)) return 0;
+  return Math.max(0, petContaCfg(p.cfgs[1 - G.cfgAtiva], id) - petContaCfg(p.cfgs[G.cfgAtiva], id));
+}
+
+const petMaxHp = () => petFaixa(G.pet ? G.pet.nivel : 1).hp;
+function somaPet(t) {
+  const p = G.pet;
+  if (!p || !p.tem || !p.eq) return 0;
+  let s = 0;
+  for (const cat of PET_CATS)
+    for (const id of (p.eq[cat] || []))
+      if (id && ITEMS[t][id]) s += ITEMS[t][id][ITEM_VAL[t]];
+  return s;
+}
+const petMaxShield = () => Math.round(somaPet("escudo"));
+/* Dano de um tiro do pet: os canhões dele, +4% por nível, e o multiplicador
+   do calibre em uso — ×1, ×2, ×3, ×4 e ×5 valem para ele também, esteja você
+   atacando ou não. O pet não gasta munição do porão; só acompanha o calibre. */
+const petDanoBase = () => Math.max(20, somaPet("laser")) * (1 + 0.04 * ((G.pet ? G.pet.nivel : 1) - 1));
+const calibrePet  = () => AMMO[G.calibre] || AMMO[G.ammoSel] || AMMO.lcb10;
+const petDano = () => petDanoBase() * calibrePet().mult;
+/* está de fato voando com você */
+const petAtivo = () => !!(G.pet && G.pet.tem && G.pet.ativo && !G.pet.abatido);
+const raioPet  = () => 10 + (G.pet ? G.pet.nivel : 1) * 0.45;
+const nomeDoPet = () => (G.pet && G.pet.nome) || "Pet";
+/* o pet pode ser mirado como qualquer outro alvo, mas nunca revida em você */
+const alvoEhPet = a => !!(a && G.pet && a === G.pet);
+/* alvo que o canhão aceita: um inimigo vivo ou o seu próprio pet em voo */
+const alvoOk = a => !!a && (G.inimigos.includes(a) || (alvoEhPet(a) && petAtivo()));
+
+/* O pet recebe o mesmo XP que você. Subindo de faixa ele ganha vida e
+   encaixes novos, e chega à vida cheia da faixa. */
+function petGanharXp(q) {
+  const p = G.pet;
+  if (!p || !p.tem || !q) return;
+  const antes = p.nivel;
+  p.xp += q;
+  const agora = clamp(petNivel(p.xp), 1, PET_NIVEL_MAX);
+  if (agora === antes) return;
+  p.nivel = agora;
+  normalizarPet();
+  p.hp = petMaxHp();
+  const f = petFaixa(agora), fa = petFaixa(antes);
+  toast("Pet subiu para o nível " + agora +
+        (f !== fa ? ` · ${fmt(f.hp)} de vida e ${f.laser}/${f.escudo}/${f.petmod} encaixes` : ""));
+  logar("O pet chegou ao nível " + agora + ".");
 }
 
 /* Cada drone também guarda duas montagens; a ativa acompanha a da nave. */
@@ -792,9 +1055,20 @@ function trocarConfig(i) {
   // cada configuração tem o SEU escudo: o que sai fica guardado como está
   if (!Array.isArray(p.shCfg)) p.shCfg = [];
   p.shCfg[G.cfgAtiva] = p.sh;
+  // o pet troca junto, e o escudo dele também é separado por configuração
+  const pet = G.pet;
+  if (pet && pet.tem) {
+    if (!Array.isArray(pet.shCfg)) pet.shCfg = [];
+    pet.shCfg[G.cfgAtiva] = pet.sh;
+  }
 
   G.cfgAtiva = i;
   normalizarEquip();
+
+  if (pet && pet.tem) {
+    const mxP = petMaxShield(), gP = pet.shCfg[i];
+    pet.sh = clamp(typeof gP === "number" ? gP : mxP, 0, mxP);
+  }
 
   const mx = maxShield();
   const guardado = p.shCfg[i];
@@ -828,6 +1102,8 @@ function equipados(t, id) {
     const a1 = ((d.cfgs && d.cfgs[1]) || []).filter(x => x === id).length;
     n += Math.max(a0, a1);
   }
+  if (G.pet && G.pet.tem && Array.isArray(G.pet.cfgs))       // o pet também segura peça
+    n += Math.max(petContaCfg(G.pet.cfgs[0], id), petContaCfg(G.pet.cfgs[1], id));
   return n;
 }
 const livres = (t,id) => possui(t,id) - equipados(t,id);
@@ -859,7 +1135,8 @@ function somaEquip(t) {
 
 const tipoDoItem = id => ITEMS.laser[id] ? "laser" : ITEMS.escudo[id] ? "escudo"
                        : ITEMS.motor[id] ? "motor" : ITEMS.modulo[id] ? "modulo"
-                       : ITEMS.lancador[id] ? "lancador" : null;
+                       : ITEMS.lancador[id] ? "lancador"
+                       : ITEMS.petmod[id] ? "petmod" : null;
 
 /* texto curto que aparece no quadrado do item */
 function textoItem(t, id) {
@@ -867,6 +1144,7 @@ function textoItem(t, id) {
   if (t === "modulo") return it.curto;
   if (t === "lancador") return it.misseis + " mísseis";
   if (t === "escudo") return "+" + fmt(it.sh) + " · " + Math.round(it.abs*100) + "%";
+  if (t === "petmod") return it.curto || "módulo de pet";
   const un = { laser:"dano", motor:"velocidade" }[t];
   return "+" + it[ITEM_VAL[t]] + " " + un;
 }
@@ -935,13 +1213,58 @@ const rankProx  = () => RANKS[Math.min(RANKS.length - 1, rankIndex() + 1)];
 
 const maxHp     = () => Math.round(shipData().hp * (1 + 0.03 * rankIndex()));
 const maxShield = () => Math.round((shipData().shield + somaEquip("escudo") + somaDrones("escudo"))
-  * G.mod.shield * (1 + 0.12 * G.up.escudo) * (1 + bonusDrones("escudo")));
+  * G.mod.shield * (1 + 0.12 * G.up.escudo) * (1 + bonusDrones("escudo"))
+  * (1 + bonusFormacao("escudo")));
 const ammoMult  = () => AMMO[G.ammoSel].mult;
+
+/* ---- gasto de munição ----
+   Cada tiro consome uma unidade por canhão que participou dele. A nave
+   dispara com os canhões dela mais os dos drones; o pet gasta pelos canhões
+   que estão montados nele. Quanto mais canhão, mais dano e mais consumo. */
+function contarCanhoes(listas) {
+  let n = 0;
+  for (const arr of listas) for (const id of (arr || [])) if (ITEMS.laser[id]) n++;
+  return n;
+}
+function canhoesNave() {
+  const listas = CATS.map(cat => G.equip[cat]);
+  for (const d of G.drones) listas.push(d.itens);
+  return contarCanhoes(listas);
+}
+function canhoesPet() {
+  const pet = G.pet;
+  if (!pet || !pet.tem || !pet.eq) return 0;
+  return contarCanhoes(PET_CATS.map(cat => pet.eq[cat]));
+}
+
+/* Tira do porão o que o tiro custou. Se não der, gasta o resto e volta
+   para a LCB-10, que é ilimitada. Devolve false quando acabou. */
+function gastarMunicao(id, qtd) {
+  const a = AMMO[id];
+  if (!a || a.infinita) return true;
+  const tem = G.municao[id] || 0;
+  if (tem >= qtd) { G.municao[id] = tem - qtd; return true; }
+  G.municao[id] = 0;
+  G.ammoSel = "lcb10"; G.calibre = "lcb10";
+  toast(a.nome + " acabou — voltando para " + AMMO.lcb10.nome);
+  montarBarraHab();
+  return false;
+}
+/* dano de qualquer míssil ou foguete, já com a patente e a formação Alvo */
+const danoMissil = d => d * (1 + 0.02*rankIndex()) * (1 + bonusFormacao("missil"));
+/* honra ganha em qualquer lugar passa por aqui, para o Caranguejo valer */
+function ganharHonra(q) {
+  if (!q) return 0;
+  const total = Math.round(q * (1 + bonusFormacao("honra")));
+  G.honra += total;
+  return total;
+}
 
 /* dano de um tiro sem contar a munição */
 function dmgBase() {
   const base = Math.max(6, somaEquip("laser") + somaDrones("laser"));
   let d = base * G.mod.dmg * (1 + 0.12 * G.up.laser) * (1 + bonusDrones("laser"))
+        * (1 + bonusFormacao("laser"))
         * (1 + 0.02 * rankIndex()) * clanBonus();
   if (G.buff.sobrecarga > G.tempo) d *= 2;
   return d;
@@ -1008,6 +1331,15 @@ function iniciarSetor(estado) {
     ultimoMovimento: -9999, ultimoMissil: -9999, cdAmmo: {},
     shCfg: Array.isArray(st.shCfg) ? st.shCfg.slice() : [],   // escudo guardado de cada config
   };
+  // o pet chega junto com a nave, sem alvo e sem arrastar dano do setor anterior
+  if (G.pet) {
+    G.pet.x = G.player.x - 90; G.pet.y = G.player.y;
+    G.pet.alvo = null; G.pet.engajado = null; G.pet.ultimoDano = -9999;
+    G.pet.pouso = null; G.pet.vagueio = null; G.pet.seguirEm = 0; G.pet.viuAndar = false;
+    G.pet.balanco = null; G.pet.lado = 0; G.pet.recuo = PET_RASTRO; G.pet.ritmo = null; G.pet.vel = 1;
+    if (G.pet.tem && !G.pet.abatido && G.pet.hp <= 0) G.pet.hp = petMaxHp();
+  }
+  rastro = []; inclinacaoTita = 0;
   G.inimigos = []; G.loot = []; G.caixas = []; G.particulas = []; G.danos = []; G.tiros = [];
   G.invasao = null; G.coleta = null; G.salto = null; G.saltoAlvo = null; G.portalPerto = null;
   G.proxInvasao = G.tempo + rnd(INVASAO_INTERVALO[0], INVASAO_INTERVALO[1]);
@@ -1179,6 +1511,8 @@ cv.addEventListener("pointerdown", e => {
   let clicado = null;
   for (const en of G.inimigos)
     if (dist(px, py, en.x, en.y) < en.d.raio + 18) { clicado = en; break; }
+  // o próprio pet também pode ser selecionado — e atacado, se você quiser
+  if (!clicado && petAtivo() && dist(px, py, G.pet.x, G.pet.y) < raioPet() + 16) clicado = G.pet;
   if (clicado) {
     // trocar de alvo interrompe o ataque; clicar de novo no mesmo retoma
     if (G.player.alvo === clicado) G.player.atacando = true;
@@ -1218,8 +1552,23 @@ window.addEventListener("pointerup", soltarPonteiro);
 window.addEventListener("pointercancel", soltarPonteiro);
 window.addEventListener("blur", soltarPonteiro);
 
+/* Enquanto o cursor está dentro de um campo de texto, o teclado é dele:
+   nenhum atalho do jogo dispara — dá para escrever "conf" sem trocar de
+   configuração, apertar espaço sem atirar, e por aí vai. */
+function digitando() {
+  const a = document.activeElement;
+  if (!a) return false;
+  const tag = (a.tagName || "").toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || a.isContentEditable;
+}
+
 window.addEventListener("keydown", e => {
   if (!running) return;
+  if (digitando()) {
+    // só o Escape continua valendo, para sair do campo sem usar o mouse
+    if (e.key === "Escape") document.activeElement.blur();
+    return;
+  }
   const k = e.key.toLowerCase();
   if (k === " ") { e.preventDefault(); alternarAtaque(); }
   else if (k === "escape") fecharModal();
@@ -1259,7 +1608,7 @@ function alvoMaisProximo(alcance) {
 function alternarAtaque() {
   const p = G.player;
   if (p.atacando) { p.atacando = false; return; }
-  const valido = p.alvo && G.inimigos.includes(p.alvo) &&
+  const valido = alvoOk(p.alvo) &&
                  dist(p.x, p.y, p.alvo.x, p.alvo.y) <= ALCANCE_AUTO;
   if (!valido) p.alvo = alvoMaisProximo();
   if (!p.alvo) { toast("Nenhum inimigo por perto"); return; }
@@ -1276,10 +1625,11 @@ function proximoAlvo() {
 
 function selAmmo(id) {
   if (!id || !AMMO[id]) return;
-  if (AMMO[id].rajada) { toast(AMMO[id].nome + " é de disparo avulso — use o espaço dela na barra"); return; }
   if (!AMMO[id].infinita && !(G.municao[id] > 0)) { toast("Sem " + AMMO[id].nome); return; }
   G.ammoSel = id;
-  toast("Munição: " + AMMO[id].nome + " (×" + AMMO[id].mult + ")");
+  G.calibre = id;                     // o pet passa a bater no mesmo calibre
+  toast("Munição: " + AMMO[id].nome + " (×" + AMMO[id].mult + ")"
+        + (AMMO[id].rajada ? " · dispara sozinha a cada " + (AMMO[id].cd/1000) + "s" : ""));
   if (typeof montarBarraHab === "function") montarBarraHab();
 }
 
@@ -1314,7 +1664,7 @@ function atirarFoguete() {
   if (dist(p.x, p.y, p.alvo.x, p.alvo.y) > 900) { toast("Fora de alcance"); return; }
   G.foguetes[G.foguetSel]--;
   p.ultimoFoguete = G.tempo;
-  atirarLaser(p, p.alvo, f.dmg * (1 + 0.02*rankIndex()), "#ffb347", true, true);
+  atirarLaser(p, p.alvo, danoMissil(f.dmg), "#ffb347", true, true);
   p.alvo.agro = true;
   p.alvo.permitido = G.tempo + PERMISSAO_REVIDE;
   beep(180, 0.12);
@@ -1372,9 +1722,17 @@ function atualizar(dt) {
     p.ultimoMovimento = T;
   }
   // em combate a nave aponta para o alvo; fora dele, para onde está indo
-  const mirando = p.atacando && p.alvo && G.inimigos.includes(p.alvo);
+  const angAntes = p.ang;
+  const mirando = p.atacando && alvoOk(p.alvo);
   if (mirando) p.ang = anguloSuave(p.ang, Math.atan2(p.alvo.y - p.y, p.alvo.x - p.x), 0.2);
   else if (rumo !== null) p.ang = anguloSuave(p.ang, rumo, 0.14);
+
+  // quanto ela girou neste quadro alimenta a inclinação e a esteira
+  let giro = p.ang - angAntes;
+  while (giro >  Math.PI) giro -= 2*Math.PI;
+  while (giro < -Math.PI) giro += 2*Math.PI;
+  atualizarInclinacao(giro * 16 / Math.max(1, dt), dt);
+  alimentarRastro(dt);
 
   // --- regeneração (em qualquer lugar do mapa) ---
   const seguro = emSeguranca();
@@ -1397,15 +1755,22 @@ function atualizar(dt) {
   if (semDano > ESPERA_CASCO && !p.movendo && p.hp < maxHp())
     p.hp = Math.min(maxHp(), p.hp + maxHp()*REGEN_CASCO*mult*dt);
 
-  if (p.alvo && !G.inimigos.includes(p.alvo)) { p.alvo = null; p.atacando = false; }
+  // o alvo some quando morre; o pet vale como alvo enquanto estiver em voo
+  if (p.alvo && !G.inimigos.includes(p.alvo) &&
+      !(alvoEhPet(p.alvo) && petAtivo())) { p.alvo = null; p.atacando = false; }
 
   // ataque do jogador
-  if (p.atacando && p.alvo && dist(p.x,p.y,p.alvo.x,p.alvo.y) <= 720 && T - p.ultimoTiro > 560) {
+  const noAlcance = p.atacando && p.alvo && dist(p.x,p.y,p.alvo.x,p.alvo.y) <= 720;
+  const selecionada = AMMO[G.ammoSel] || AMMO.lcb10;
+
+  /* A RSB-300 fica selecionada como qualquer outra, só que tem ritmo próprio:
+     em vez da cadência normal, ela espera esfriar e sai de novo sozinha. */
+  if (selecionada.rajada) {
+    if (noAlcance && T >= ((p.cdAmmo || {})[G.ammoSel] || 0)) dispararRajada(G.ammoSel, true);
+  }
+  else if (noAlcance && T - p.ultimoTiro > 560) {
     p.ultimoTiro = T;
-    if (!AMMO[G.ammoSel].infinita) {
-      if (G.municao[G.ammoSel] > 0) G.municao[G.ammoSel]--;
-      else { G.ammoSel = "padrao"; toast("Munição acabou — voltando para LCB-10"); }
-    }
+    gastarMunicao(G.ammoSel, Math.max(1, canhoesNave()));
     // o dano só acontece quando o tiro chega no alvo
     const am = AMMO[G.ammoSel] || AMMO.lcb10;
     atirarLaser(p, p.alvo, dmgTotal() * (0.9 + Math.random()*0.2),
@@ -1428,7 +1793,7 @@ function atualizar(dt) {
       p.ultimoMissil = T;
       p.semFoguete = false;
       G.foguetes[G.foguetSel] -= disponiveis;
-      const dano = f.dmg * (1 + 0.02*rankIndex());
+      const dano = danoMissil(f.dmg);
       for (let i = 0; i < disponiveis; i++)
         atirarLaser(p, p.alvo, dano, "#ffb347", true, true,
           { desvio: (i - (disponiveis-1)/2) * 12 });
@@ -1481,16 +1846,19 @@ function atualizar(dt) {
     // é o ataque deles, não a passagem
     if (en.agro && podeAtacar && dp < ed.range && T - en.ultimoTiro > 950) {
       en.ultimoTiro = T;
+      // os inimigos nunca miram no pet: todo tiro deles vem para você
       atirarLaser(en, p, ed.dmg * (0.85 + Math.random()*0.3), ed.cor, false);
     }
   }
+
+  atualizarPet(dt, T, seguro);
 
   // --- projéteis em voo ---
   for (let i = G.tiros.length - 1; i >= 0; i--) {
     const b = G.tiros[i];
     /* Alvo morreu no meio do caminho: o tiro não some. Vira um projétil órfão,
        termina o voo até onde o inimigo estava e estoura ali, sem ferir nada. */
-    if (b.doJogador && !b.orfao && !G.inimigos.includes(b.alvo)) {
+    if (b.doJogador && !b.orfao && !G.inimigos.includes(b.alvo) && !alvoEhPet(b.alvo)) {
       b.orfao = true;
       b.visual = true;
       if (b.salva) fecharSalva(b.salva);        // fecha a conta do que já acertou
@@ -1518,7 +1886,12 @@ function atualizar(dt) {
     const dd = dist(b.x, b.y, b.alvo.x, b.alvo.y);
     const podeAcertar = T - b.nascido >= (b.minVoo || 0);   // míssil precisa do tempo de voo
     if (podeAcertar && dd <= passo + (b.curvo ? 18 : 12)) {
-      if (b.doJogador && b.rouba) {
+      if (b.doJogador && alvoEhPet(b.alvo)) {
+        // você mirou no seu próprio pet: ele apanha e não revida
+        if (!b.visual) danoNoPet(b.dano);
+        if (b.salva) { b.salva.total += b.dano; fecharSalva(b.salva, b.alvo.x, b.alvo.y); }
+        faisca(b.alvo.x, b.alvo.y, b.cor);
+      } else if (b.doJogador && b.rouba) {
         // DRNO-25: só mexe no escudo, e o que tira vai para o seu
         const en = b.alvo;
         const roubado = Math.min(Math.max(0, en.sh), b.dano);
@@ -1533,7 +1906,7 @@ function atualizar(dt) {
         if (b.curvo || b.foguete) explosao(b.alvo.x, b.alvo.y, b.cor, 14);
         else faisca(b.alvo.x, b.alvo.y, b.cor);
       } else if (b.doJogador) {
-        aplicarDano(b.alvo, b.dano, !!b.salva);
+        aplicarDano(b.alvo, b.dano, !!b.salva, b.doPet);
         if (b.salva) {
           b.salva.total += b.dano;
           fecharSalva(b.salva, b.alvo.x, b.alvo.y);
@@ -1666,6 +2039,7 @@ function atirarLaser(origem, alvo, dano, cor, doJogador, foguete, extra) {
     alvo, dano, cor, doJogador, foguete: !!foguete, de: origem,
     vel: (ex.vel || (foguete ? 9 : (doJogador ? 16 : 12))), vida: 0,
     rouba: !!ex.rouba, curvo: !!ex.curvo, salva: ex.salva || null, espera: ex.espera || 0,
+    doPet: !!ex.doPet,
     visual: !!ex.visual, kAbre: ex.kAbre || 0.07,
     forma: ex.forma || (ex.curvo ? "missil" : foguete ? "foguete" : "bolt"),
   });
@@ -1728,7 +2102,7 @@ function dispararLancador(auto) {
 
   G.projeteis[G.projetilSel] -= n;
   p.lancCd = G.tempo + cargaLancador();
-  const dano = proj.dmg * (1 + 0.02*rankIndex());
+  const dano = danoMissil(proj.dmg);
   const paraAlvo = Math.atan2(p.alvo.y - p.y, p.alvo.x - p.x);
   // a salva inteira soma num número só quando chega
   const salva = { restantes: n, total: 0, cor: proj.cor, x: p.alvo.x, y: p.alvo.y };
@@ -1758,19 +2132,22 @@ function dispararLancador(auto) {
 
 /* RSB-300: um tiro só, de um dano só, mas que sai como quatro rajadas
    laranja grossas, uma atrás da outra. Depois disso, resfria. */
-function dispararRajada(id) {
+function dispararRajada(id, auto) {
   const a = AMMO[id], p = G.player;
+  const aviso = m => { if (!auto) toast(m); };
   if (!p.cdAmmo) p.cdAmmo = {};
-  if (G.tempo < (p.cdAmmo[id] || 0)) { toast(a.nome + " resfriando"); return; }
+  if (G.tempo < (p.cdAmmo[id] || 0)) { aviso(a.nome + " resfriando"); return; }
 
-  const valido = p.alvo && G.inimigos.includes(p.alvo) &&
+  const valido = alvoOk(p.alvo) &&
                  dist(p.x, p.y, p.alvo.x, p.alvo.y) <= ALCANCE_AUTO;
   if (!valido) p.alvo = alvoMaisProximo();
-  if (!p.alvo) { toast("Nenhum inimigo por perto"); return; }
-  if ((G.municao[id] || 0) < 1) { toast("Sem " + a.nome); return; }
+  if (!p.alvo) { aviso("Nenhum inimigo por perto"); return; }
+  const custo = Math.max(1, canhoesNave());
+  if (!gastarMunicao(id, custo)) return;    // acabou: já voltou para a básica
 
-  G.municao[id] -= 1;                       // um disparo, uma unidade
   p.cdAmmo[id] = G.tempo + a.cd;
+  G.ammoSel = id;                           // fica selecionada esperando esfriar
+  G.calibre = id;                           // o pet passa a bater no ×5 também
 
   /* O dano é um só e sai no primeiro clarão. As outras três rajadas são
      enfeite: viajam e estouram, mas não tiram nada. */
@@ -1786,6 +2163,237 @@ function dispararRajada(id) {
   quebrarCamuflagem();
   beep(260, 0.09);
   montarBarraHab();
+}
+
+/* ===================== PET — voo e combate ===================== */
+
+/* Quem o pet ataca: primeiro o inimigo que você escolheu; se você não estiver
+   atacando ninguém, ele mesmo revida em quem estiver atirando em você. */
+function alvoDoPet(T, seguro) {
+  const p = G.player, pet = G.pet;
+  if (p.atacando && p.alvo && G.inimigos.includes(p.alvo)) { pet.engajado = p.alvo; return p.alvo; }
+
+  /* Uma vez engajado ele guarda o inimigo e não desiste: nem a zona segura
+     nem o tempo o fazem largar. Só para de atirar se o bicho sair do alcance
+     dele — e volta a atirar assim que ele reaparecer perto. */
+  if (pet.engajado && !G.inimigos.includes(pet.engajado)) pet.engajado = null;
+  if (pet.engajado) {
+    return dist(pet.x, pet.y, pet.engajado.x, pet.engajado.y) <= PET_ALCANCE ? pet.engajado : null;
+  }
+
+  // para PEGAR um alvo novo, na zona segura vale só quem está atirando em você
+  let melhor = null, perto = Infinity;
+  for (const en of G.inimigos) {
+    if (!en.agro || T < (en.cego || 0)) continue;
+    if (seguro && T >= (en.permitido || 0)) continue;   // na zona segura, só quem tem revide liberado
+    const d = dist(en.x, en.y, p.x, p.y);
+    if (d > en.d.range * 1.15) continue;                // não está de fato em cima de você
+    if (d < perto) { perto = d; melhor = en; }
+  }
+  if (melhor) pet.engajado = melhor;
+  return melhor;
+}
+
+/* Sorteia um lugar para o pet estacionar perto da nave. */
+/* O ponto é guardado em coordenada do mapa, não colado na nave: é isso que
+   deixa o pet realmente parado ali enquanto você se afasta. */
+function novoPousoPet() {
+  const p = G.player;
+  const ang = Math.random() * Math.PI * 2;
+  const raio = PET_POUSO_MIN + Math.random() * (PET_POUSO_MAX - PET_POUSO_MIN);
+  G.pet.pouso = { x: p.x + Math.cos(ang) * raio, y: p.y + Math.sin(ang) * raio };
+}
+/* Enquanto ataca ele não fica plantado: sorteia pontos em volta do inimigo
+   e vai trocando de lugar. */
+function novoVagueioPet(alvo, T) {
+  G.pet.vagueio = {
+    de: alvo,
+    ang: Math.random() * Math.PI * 2,
+    raio: PET_VAG_MIN + Math.random() * (PET_VAG_MAX - PET_VAG_MIN),
+    ate: T + PET_VAG_TROCA[0] + Math.random() * (PET_VAG_TROCA[1] - PET_VAG_TROCA[0]),
+  };
+}
+
+/* O pet não roda em volta de você: ele para num ponto qualquer ali do lado.
+   Quando a nave anda, ele vem atrás; quando você para, ele escolhe outro
+   canto perto de você e para também. Em combate ele fica em cima do inimigo
+   trocando de lugar, e continua ali enquanto você também estiver perto —
+   se você se afastar do bicho, aí sim ele larga e vai atrás de você, sem
+   deixar de atirar enquanto o alvo estiver no alcance. */
+function atualizarPet(dt, T, seguro) {
+  const pet = G.pet, p = G.player;
+  if (!pet || !pet.tem) return;
+
+  // destruído: fica fora do mapa até você pagar o conserto
+  if (pet.abatido) { pet.alvo = null; pet.engajado = null; return; }
+  if (!pet.ativo) { pet.alvo = null; return; }
+
+  if (pet.alvo && !G.inimigos.includes(pet.alvo)) pet.alvo = null;
+  pet.alvo = alvoDoPet(T, seguro);
+  const alvo = pet.alvo;
+
+  /* 1 segundo de atraso: você sai e ele fica onde está até perceber.
+     O canto novo só é sorteado quando a nave PARA — enquanto você anda,
+     o ponto antigo continua valendo e é ele que segura o pet no lugar. */
+  if (p.movendo && !pet.viuAndar) pet.seguirEm = T + PET_ATRASO;
+  if (!p.movendo && pet.viuAndar) pet.pouso = null;
+  pet.viuAndar = !!p.movendo;
+
+  /* Se você ainda está em cima do bicho, ele não larga a briga para te
+     acompanhar — só sai atrás quando você de fato se afasta do inimigo. */
+  const naBriga = !!alvo && dist(p.x, p.y, alvo.x, alvo.y) <= PET_FICA;
+  const seguindo = p.movendo && T >= (pet.seguirEm || 0) && !naBriga;
+
+  // --- para onde ir ---
+  let tx, ty;
+  if (seguindo) {
+    pet.vagueio = null;
+    // sorteia um novo lado e um novo recuo de tempos em tempos
+    if (!pet.balanco || T >= pet.balanco.ate) {
+      // o lado novo é quase sempre o contrário do atual, para ele cruzar mesmo
+      const virar = pet.balanco && Math.random() < 0.8 ? -Math.sign(pet.balanco.lado || 1)
+                                                       : (Math.random() < 0.5 ? -1 : 1);
+      pet.balanco = {
+        lado:  virar * (0.5 + Math.random()*0.5) * PET_ZIGUE,
+        recuo: PET_RASTRO + (Math.random()*2 - 1) * PET_RECUO,
+        ate: T + PET_ZIGUE_T[0] + Math.random() * (PET_ZIGUE_T[1] - PET_ZIGUE_T[0]),
+      };
+    }
+    // e vai deslizando até ele, para o vaivém sair macio
+    pet.lado  += (pet.balanco.lado  - pet.lado)  * 0.11 * dt/16;
+    pet.recuo += (pet.balanco.recuo - pet.recuo) * 0.08 * dt/16;
+
+    const atras = p.ang + Math.PI;                // corre atrás da nave
+    tx = p.x + Math.cos(atras) * pet.recuo + Math.cos(atras + Math.PI/2) * pet.lado;
+    ty = p.y + Math.sin(atras) * pet.recuo + Math.sin(atras + Math.PI/2) * pet.lado;
+  } else if (naBriga) {
+    // em cima do inimigo, trocando de lugar de tempos em tempos
+    if (!pet.vagueio || pet.vagueio.de !== alvo || T >= pet.vagueio.ate) novoVagueioPet(alvo, T);
+    tx = alvo.x + Math.cos(pet.vagueio.ang) * pet.vagueio.raio;
+    ty = alvo.y + Math.sin(pet.vagueio.ang) * pet.vagueio.raio;
+  } else {
+    if (!pet.pouso) novoPousoPet();
+    tx = pet.pouso.x;
+    ty = pet.pouso.y;
+  }
+  if (!seguindo) { pet.balanco = null; pet.lado = 0; pet.recuo = PET_RASTRO; }
+
+  /* Seguindo, o ritmo também varia: ele dá uma acelerada, alivia, acelera de
+     novo. Ficando muito para trás, a corrida de alcance manda no passo. */
+  if (seguindo) {
+    if (!pet.ritmo || T >= pet.ritmo.ate)
+      pet.ritmo = {
+        k: PET_RITMO[0] + Math.random() * (PET_RITMO[1] - PET_RITMO[0]),
+        ate: T + PET_RITMO_T[0] + Math.random() * (PET_RITMO_T[1] - PET_RITMO_T[0]),
+      };
+    pet.vel += (pet.ritmo.k - pet.vel) * 0.07 * dt/16;
+  } else { pet.ritmo = null; pet.vel = 1; }
+
+  const d = dist(pet.x, pet.y, tx, ty);
+  if (d > 4) {                                    // parado de verdade quando chega no ponto
+    /* Seguindo, ele anda no compasso da nave: nem dispara na frente nem
+       fica plantado. Só solta o passo largo quando ficou longe demais. */
+    const base = seguindo ? Math.max(speedTotal(), 1.2) : PET_VEL;
+    // quanto mais ele se distancia do ponto, mais aperta o passo para colar de volta
+    const puxao = seguindo ? clamp((d - 80) / 160, 0, 1) * (PET_ALCANCA - 1) : 0;
+    const corrida = seguindo ? pet.vel + puxao : (d > 320 ? 1.8 : pet.vel);
+    const passo = Math.min(d, base * corrida * dt / 16);
+    const a = Math.atan2(ty - pet.y, tx - pet.x);
+    pet.x += Math.cos(a) * passo;
+    pet.y += Math.sin(a) * passo;
+    pet.ang = anguloSuave(pet.ang, alvo ? Math.atan2(alvo.y - pet.y, alvo.x - pet.x) : a, 0.18);
+  } else if (alvo) {
+    pet.ang = anguloSuave(pet.ang, Math.atan2(alvo.y - pet.y, alvo.x - pet.x), 0.18);
+  } else {
+    pet.ang = anguloSuave(pet.ang, p.ang, 0.06);  // parado, vai se alinhando com a nave
+  }
+
+  /* Ele não tem hora para parar: enquanto o alvo estiver no alcance, atira.
+     Isso não solta o inimigo dentro da zona segura, porque o tiro do pet
+     não renova a permissão de revide — o inimigo cala nos 5 segundos dele
+     mesmo com o pet ainda batendo. */
+  if (alvo) {
+    /* No calibre ×5 o resfriamento da RSB-300 é um só, dividido entre vocês
+       dois: se o pet dispara, a sua também fica recarregando, e vice-versa. */
+    const calibre = calibrePet();
+    const rajada = !!calibre.rajada;
+    if (!p.cdAmmo) p.cdAmmo = {};
+    const pronto = rajada ? T >= (p.cdAmmo[G.calibre] || 0)
+                          : T - pet.ultimoTiro > PET_CADENCIA;
+    if (dist(pet.x, pet.y, alvo.x, alvo.y) <= PET_ALCANCE && pronto) {
+      pet.ultimoTiro = T;
+      if (rajada) { p.cdAmmo[G.calibre] = T + calibre.cd; montarBarraHab(); }
+      const am = calibre;                            // sai na cor e no calibre em uso
+      const dano = petDano() * (0.9 + Math.random()*0.2);   // fecha o dano antes de gastar
+      gastarMunicao(G.calibre, Math.max(1, canhoesPet()));  // ele gasta pelos canhões dele
+      atirarLaser(pet, alvo, dano, am.cor || PET_COR, true, false,
+                  { doPet: true, vel: 15, forma: am.rajada ? "rajada" : undefined });
+      // o tiro do pet nunca renova a permissão de revide: quem estica esse
+      // prazo é você atirando. Na zona segura, o inimigo para nos 5s dele
+      // mesmo com o pet ainda em cima.
+      if (!seguro || T < (alvo.permitido || 0)) alvo.agro = true;
+    }
+  }
+
+  /* Só o escudo dele se recupera. O casco não volta sozinho: uma vez
+     danificado, fica assim até você mandar consertar. */
+  if (T - pet.ultimoDano > ESPERA_ESCUDO) {
+    const mx = petMaxShield();
+    if (pet.sh < mx) pet.sh = Math.min(mx, pet.sh + mx * 0.25 * dt / 1000);
+  }
+}
+
+function danoNoPet(dano) {
+  const pet = G.pet;
+  if (!pet || !petAtivo()) return;
+  pet.ultimoDano = G.tempo;
+  const absorvido = Math.min(pet.sh, dano);
+  pet.sh -= absorvido;
+  pet.hp -= dano - absorvido;
+  numeroDano(pet.x, pet.y - 22, "-" + fmt(Math.round(dano)), "#ffb3d0");
+  if (pet.hp <= 0) {
+    pet.hp = 0; pet.sh = 0;
+    pet.abatido = true;
+    pet.alvo = null;
+    if (G.player.alvo === pet) { G.player.alvo = null; G.player.atacando = false; }
+    explosao(pet.x, pet.y, PET_COR, 26);
+    toast(`${nomeDoPet()} foi destruído — conserto por ${fmt(PET_CONSERTO)} cr`);
+    logar(nomeDoPet() + " foi destruído.");
+  }
+}
+
+/* Sem contagem de tempo: ele só volta quando você paga o conserto,
+   e volta machucado — 1.000 de casco e 1.000 de escudo. */
+function consertarPet() {
+  const pet = G.pet;
+  if (!pet || !pet.tem) return;
+  if (!pet.abatido) { toast(nomeDoPet() + " não está destruído"); return; }
+  if (G.creditos < PET_CONSERTO) { toast("Faltam créditos para o conserto"); return; }
+  G.creditos -= PET_CONSERTO;
+  pet.abatido = false;
+  pet.hp = Math.min(PET_VOLTA_HP, petMaxHp());
+  pet.sh = Math.min(PET_VOLTA_SH, petMaxShield());
+  pet.x = G.player.x; pet.y = G.player.y;
+  pet.pouso = null; pet.vagueio = null; pet.ultimoDano = G.tempo;
+  toast(`${nomeDoPet()} consertado — ${fmt(pet.hp)} de casco e ${fmt(pet.sh)} de escudo`);
+  logar("Consertou o " + nomeDoPet() + ".");
+  const m = el("modal");
+  if (m && !m.classList.contains("hidden")) renderBase();
+}
+
+function alternarPet() {
+  const pet = G.pet;
+  if (!pet || !pet.tem) { toast("Você ainda não tem um pet — compre na Loja"); return; }
+  if (pet.abatido) { toast("O pet está se recompondo"); return; }
+  pet.ativo = !pet.ativo;
+  if (pet.ativo) {
+    pet.x = G.player.x; pet.y = G.player.y;
+    pet.hp = pet.hp > 0 ? pet.hp : petMaxHp();
+    toast("Pet ligado");
+  } else {
+    pet.alvo = null;
+    toast("Pet desligado");
+  }
 }
 
 function danoNoJogador(dano, autor) {
@@ -1882,11 +2490,17 @@ function numeroDano(x, y, txt, cor) {
   });
 }
 
-function aplicarDano(en, dano, semNumero) {
+function aplicarDano(en, dano, semNumero, doPet) {
   en.ultimoDano = G.tempo;
-  // atacar libera o revide por alguns segundos, mesmo na zona segura
-  en.permitido = G.tempo + PERMISSAO_REVIDE;
-  en.agro = true;
+  /* Atacar libera o revide por alguns segundos, mesmo na zona segura — mas
+     só o SEU tiro faz isso. O do pet machuca sem renovar nada, senão o
+     inimigo revidaria para sempre enquanto o pet estivesse em cima. */
+  if (!doPet) {
+    en.permitido = G.tempo + PERMISSAO_REVIDE;
+    en.agro = true;
+  } else if (!emSeguranca() || G.tempo < (en.permitido || 0)) {
+    en.agro = true;
+  }
   const abs = Math.min(en.sh, dano);
   en.sh -= abs; dano -= abs; en.hp -= dano;
   if (!semNumero) numeroDano(en.x, en.y - 28, "-" + fmt(abs + dano), "#ffe08a");
@@ -1928,7 +2542,7 @@ function matarInimigo(en) {
       logar(DRONE_TIPOS[d.tipo].nome + " chegou ao nível " + agora + ".");
     }
   }
-  if (ed.honra) { G.honra += ed.honra; G.stats.pilotos++; progredirMissao("piloto"); }
+  if (ed.honra) { ganharHonra(ed.honra); G.stats.pilotos++; progredirMissao("piloto"); }
   else { G.stats.abates++; progredirMissao("matar", en.tipo); }
   logar("Abateu " + ed.nome + ".");
 
@@ -1941,7 +2555,7 @@ function matarInimigo(en) {
     G.loot.push({ x:en.x, y:en.y, tipo:r, qtd:q, nasceu:G.tempo });
   }
   if (G.player.alvo === en) { G.player.alvo = null; G.player.atacando = false; }
-  if (ed.boss) { toast("DEVORADOR abatido!"); G.honra += 3000; }
+  if (ed.boss) { toast("DEVORADOR abatido!"); ganharHonra(3000); }
 }
 
 function coletar(l) {
@@ -1977,7 +2591,9 @@ function abrirCaixa(c) {
 }
 
 function ganharXp(q) {
+  q = Math.round(q * (1 + bonusFormacao("xp")));   // formação Barreira
   G.xp += q;
+  petGanharXp(q);                                  // o pet sobe junto com você
   while (G.xp >= xpNecessario(G.nivel)) {
     G.xp -= xpNecessario(G.nivel); G.nivel++;
     explosao(G.player.x, G.player.y, "#b06bff", 40);
@@ -2206,9 +2822,12 @@ function desenhar(t) {
   for (const b of G.tiros) if (!(b.espera > 0)) desenharTiro(b, t);
 
   desenharDrones(t);
+  desenharPet(t);
+  desenharRastro();
   if (!G.morto) {
     ctx.globalAlpha = invisivel() ? 0.4 : 1;
-    desenharNave(p.x, p.y, p.ang, G.cor, 16);
+    if (G.nave === "tita" && spritePronto()) desenharTita(p.x, p.y, p.ang, t);
+    else desenharNave(p.x, p.y, p.ang, G.cor, 16);
     ctx.globalAlpha = 1;
     if (invulneravel()) {                       // bolha de proteção pós-ressurreição
       const k = (G.player.invulAte - G.tempo) / INVUL_REVIVE;
@@ -2326,6 +2945,60 @@ function desenharTiro(b, t) {
       r: 1 + Math.random()*2, cor: "#ff9d4d", vida: 180 + Math.random()*200, max: 380 });
 }
 
+/* A Titã é desenhada com o sprite; as outras naves seguem no vetor de sempre. */
+function desenharTita(x, y, ang, t) {
+  const p = G.player;
+  const q = clamp(TITA_MEIO + Math.round(inclinacaoTita * TITA_MEIO), 0, TITA_QUADROS - 1);
+  const esc = TITA_TAM / TITA_LARG;
+  const w = TITA_LARG * esc, h = TITA_ALT * esc;
+
+  // parada, ela respira de leve
+  const parado = !p.movendo ? 1 : 0;
+  const respiro = parado ? 1 + Math.sin(t / 620) * 0.018 : 1;
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(ang);
+  ctx.scale(respiro, respiro);
+
+  chamaDoMotor(w, h, t);
+
+  ctx.drawImage(spriteTita, q * TITA_LARG, 0, TITA_LARG, TITA_ALT, -w/2, -h/2, w, h);
+
+  // clarão no casco logo depois de apanhar
+  const desde = G.tempo - (p.ultimoDano || -9999);
+  if (desde < 260) {
+    ctx.globalAlpha = 0.55 * (1 - desde/260);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.drawImage(spriteTita, q * TITA_LARG, 0, TITA_LARG, TITA_ALT, -w/2, -h/2, w, h);
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 1;
+  }
+  ctx.restore();
+}
+
+/* Jato saindo por trás, crescendo com a velocidade. */
+function chamaDoMotor(w, h, t) {
+  const p = G.player;
+  const v = p.movendo ? clamp(speedTotal() / 4, 0.25, 1) : 0;
+  if (v <= 0) return;
+  const base = -w * 0.46;
+  const comp = w * (0.20 + 0.34 * v) * (0.85 + Math.sin(t/45) * 0.15);
+  const alt  = h * 0.20;
+  const g = ctx.createLinearGradient(base, 0, base - comp, 0);
+  g.addColorStop(0,   "rgba(255,236,190,.95)");
+  g.addColorStop(0.35,"rgba(255,150,60,.65)");
+  g.addColorStop(1,   "rgba(255,90,40,0)");
+  ctx.fillStyle = g;
+  for (const dy of [-h*0.16, h*0.16]) {
+    ctx.beginPath();
+    ctx.moveTo(base, dy - alt/2);
+    ctx.lineTo(base - comp, dy);
+    ctx.lineTo(base, dy + alt/2);
+    ctx.closePath(); ctx.fill();
+  }
+}
+
 function desenharNave(x,y,ang,cor,tam) {
   ctx.save(); ctx.translate(x,y); ctx.rotate(ang);
   ctx.fillStyle = cor; ctx.globalAlpha = .18;
@@ -2337,6 +3010,64 @@ function desenharNave(x,y,ang,cor,tam) {
   ctx.fillStyle = cor; ctx.fill();
   ctx.strokeStyle = "rgba(255,255,255,.6)"; ctx.lineWidth = 1.2; ctx.stroke();
   ctx.restore();
+}
+
+/* ---------------------------------------------------------------------------
+   SPRITE DA TITÃ
+   Sete quadros da mesma nave vista de cima, inclinada de −30° a +30° de 10 em
+   10 graus. O modelo 3D só serviu para gerar essas figuras aqui fora: o jogo
+   continua 2D e nunca carrega modelo nenhum. Se o arquivo não estiver do lado
+   do HTML, a nave volta sozinha para o desenho vetorial.
+   Modelo "Red Goliath Spaceship" de Harold.Llanos (Sketchfab), CC-BY-4.0.
+--------------------------------------------------------------------------- */
+const TITA_QUADROS = 7;
+const TITA_LARG = 102, TITA_ALT = 66;
+const TITA_MEIO  = (TITA_QUADROS - 1) >> 1;    // índice do quadro reto
+const TITA_PASSO = 10;                         // graus de inclinação entre quadros
+const TITA_TAM   = 78;                         // largura com que ela é desenhada
+const spriteTita = new Image();
+spriteTita.src = "nave-tita.png";
+const spritePronto = () => spriteTita.complete && spriteTita.naturalWidth > 0;
+
+/* Quanto ela deita na curva: a inclinação persegue a velocidade de giro e
+   volta ao zero na reta. Guardado fora do save, é só enfeite. */
+let inclinacaoTita = 0;
+function atualizarInclinacao(giro, dt) {
+  const alvo = clamp(giro * 26, -1, 1);        // giro em rad/quadro → −1..1
+  inclinacaoTita += (alvo - inclinacaoTita) * Math.min(1, 0.15 * dt / 16);
+}
+
+/* Esteira: pontinhos que ficam para trás enquanto a nave anda e vão sumindo. */
+let rastro = [];
+const RASTRO_MAX = 26;
+function alimentarRastro(dt) {
+  const p = G.player;
+  if (!p) return;
+  if (p.movendo && !invisivel() && !G.morto) {
+    const tras = p.ang + Math.PI;
+    const d = (G.nave === "tita" && spritePronto()) ? TITA_TAM * 0.44 : 15;
+    for (const lado of (G.nave === "tita" ? [-1, 1] : [0])) {
+      rastro.push({
+        x: p.x + Math.cos(tras) * d + Math.cos(tras + Math.PI/2) * lado * 9,
+        y: p.y + Math.sin(tras) * d + Math.sin(tras + Math.PI/2) * lado * 9,
+        t: G.tempo,
+      });
+    }
+  }
+  const limite = G.tempo - 520;
+  while (rastro.length && rastro[0].t < limite) rastro.shift();
+  if (rastro.length > RASTRO_MAX * 2) rastro.splice(0, rastro.length - RASTRO_MAX * 2);
+}
+function desenharRastro() {
+  if (!rastro.length) return;
+  for (const r of rastro) {
+    const k = 1 - (G.tempo - r.t) / 520;
+    if (k <= 0) continue;
+    ctx.globalAlpha = k * 0.42;
+    ctx.fillStyle = k > 0.6 ? "#ffd7a0" : "#ff8a4d";
+    ctx.beginPath(); ctx.arc(r.x, r.y, 1.2 + k * 3.4, 0, 6.29); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 }
 
 /* posições suavizadas dos drones, para eles "arrastarem" ao virar a nave */
@@ -2436,6 +3167,62 @@ function textoRegen() {
   return partes.join(" · ");
 }
 
+/* O pet: corpo arredondado com duas asas, o tamanho crescendo com o nível.
+   Por cima dele vão as barrinhas de escudo e vida. */
+function desenharPet(t) {
+  const pet = G.pet;
+  if (!petAtivo()) return;
+  const r = 10 + pet.nivel * 0.45;
+  ctx.save(); ctx.translate(pet.x, pet.y); ctx.rotate(pet.ang);
+
+  ctx.globalAlpha = .2; ctx.fillStyle = PET_COR;
+  ctx.beginPath(); ctx.arc(0, 0, r + 6 + Math.sin(t/260)*1.5, 0, 6.29); ctx.fill();
+  ctx.globalAlpha = 1;
+
+  ctx.fillStyle = PET_COR;
+  ctx.strokeStyle = "rgba(255,255,255,.65)"; ctx.lineWidth = 1.2;
+  ctx.beginPath();                                  // corpo em gota, virado para a frente
+  ctx.moveTo(r*1.35, 0);
+  ctx.quadraticCurveTo(r*0.2, r*0.85, -r*0.9, r*0.5);
+  ctx.quadraticCurveTo(-r*1.15, 0, -r*0.9, -r*0.5);
+  ctx.quadraticCurveTo(r*0.2, -r*0.85, r*1.35, 0);
+  ctx.fill(); ctx.stroke();
+
+  ctx.fillStyle = "rgba(255,255,255,.85)";          // olho
+  ctx.beginPath(); ctx.arc(r*0.45, 0, r*0.22, 0, 6.29); ctx.fill();
+
+  ctx.globalAlpha = .55; ctx.fillStyle = PET_COR;   // asinhas batendo
+  const asa = Math.sin(t/90) * r*0.25;
+  ctx.beginPath(); ctx.ellipse(-r*0.15, -r*0.95 - asa, r*0.55, r*0.28, -0.5, 0, 6.29); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-r*0.15,  r*0.95 + asa, r*0.55, r*0.28,  0.5, 0, 6.29); ctx.fill();
+  ctx.globalAlpha = 1;
+  ctx.restore();
+
+  // barrinhas por cima, iguais às da nave
+  const mxH = petMaxHp(), mxS = petMaxShield(), L = 34;
+  const barra = (y, frac, cor) => {
+    ctx.fillStyle = "rgba(6,12,24,.7)"; ctx.fillRect(pet.x - L/2, y, L, 3);
+    ctx.fillStyle = cor; ctx.fillRect(pet.x - L/2, y, L * clamp(frac,0,1), 3);
+  };
+  barra(pet.y - r - 15, pet.hp/mxH, "#61e08a");                 // vida em cima, verde
+  if (mxS > 0) barra(pet.y - r - 11, pet.sh/mxS, "#4cc9ff");    // escudo embaixo
+
+  // nome do pet logo abaixo dele, em verde, com o dono entre colchetes
+  ctx.font = "600 11px 'Segoe UI', system-ui, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#61e08a";
+  ctx.fillText(`${nomeDoPet()} [${G.nome}]`, pet.x, pet.y + r + 15);
+  ctx.textAlign = "left";
+
+  // anel de mira quando ele é o alvo selecionado
+  if (alvoEhPet(G.player.alvo)) {
+    ctx.strokeStyle = "#ff8a8a"; ctx.lineWidth = 1.5;
+    ctx.globalAlpha = .55 + Math.abs(Math.sin(t/200))*.4;
+    ctx.beginPath(); ctx.arc(pet.x, pet.y, r + 10, 0, 6.29); ctx.stroke();
+    ctx.globalAlpha = 1; ctx.lineWidth = 1;
+  }
+}
+
 function desenharDrones(t) {
   const p = G.player;
   if (!G.drones.length) { dronePos.length = 0; return; }
@@ -2446,7 +3233,7 @@ function desenharDrones(t) {
   const comuns = [];
   G.drones.forEach((d,i) => {
     const dt = DRONE_TIPOS[d.tipo];
-    if (dt && dt.lado) alvos[i] = POS_LATERAL[dt.lado];
+    if (dt && dt.lado) alvos[i] = posUnico(dt.lado);
     else comuns.push(i);
   });
   const forma = formacaoAtual(comuns.length);
@@ -2759,9 +3546,11 @@ function celulaBarra(cel, r, c) {
     const a = AMMO[cel.id];
     if (!a) return `<div class="ab vazio">${tec}</div>`;
     const qtd = a.infinita ? "∞" : fmt(G.municao[cel.id] || 0);
-    const dica = a.rajada ? `1 tiro em ${a.rajada} rajadas · esfria ${a.cd/1000}s`
-               : a.rouba  ? "rouba escudo" : "dano ×" + a.mult;
-    return `<div class="ab tiro ${!a.rajada && G.ammoSel === cel.id ? "on" : ""}" id="ab_ammo_${cel.id}" ${abre}
+    const gasto = a.infinita ? "" : ` · gasta ${Math.max(1, canhoesNave())} por tiro seu` +
+                  (canhoesPet() ? ` e ${canhoesPet()} por tiro do pet` : "");
+    const dica = (a.rajada ? `dano ×${a.mult} em ${a.rajada} rajadas · fica selecionada e sai de novo a cada ${a.cd/1000}s`
+               : a.rouba  ? "rouba escudo" : "dano ×" + a.mult) + gasto;
+    return `<div class="ab tiro ${G.ammoSel === cel.id ? "on" : ""}" id="ab_ammo_${cel.id}" ${abre}
       title="${a.nome} — ${dica} · atalho ${teclaDaCelula(r,c)}">
       ${tec}<div style="font-size:11px">×${a.mult}</div><small>${qtd}</small>
       ${a.rajada ? `<div class="cd hidden"></div>` : ""}</div>`;
@@ -2783,7 +3572,32 @@ function celulaBarra(cel, r, c) {
       title="${pr.nome} — salva de ${n || 0} × ${fmt(pr.dmg)} · atalho ${teclaDaCelula(r,c)}">
       ${tec}<div>❂</div><small>${fmt(G.projeteis[cel.id] || 0)}</small><div class="cd hidden"></div></div>`;
   }
+  if (cel.k === "form") {
+    const f = FORMACOES[cel.id];
+    if (!f) return `<div class="ab vazio">${tec}</div>`;
+    const tem = temFormacao(cel.id), ativa = formacaoAtiva() === cel.id;
+    const poucos = cel.id !== "normal" && G.drones.length < FORMACAO_MIN;
+    const aviso = !tem ? " — não comprada"
+                : poucos ? ` — precisa de ${FORMACAO_MIN} drones` : "";
+    return `<div class="ab ${ativa ? "on" : ""} ${tem && !poucos ? "" : "locked"}" id="ab_form_${cel.id}" ${abre}
+      style="color:${f.cor};border-color:${ativa ? f.cor : "rgba(255,255,255,.28)"}"
+      title="Formação ${f.nome}${aviso} — ${f.bonus ? f.bonus.texto : "sem bônus"} · atalho ${teclaDaCelula(r,c)}">
+      ${tec}${iconeFormacao(cel.id)}<small>${f.nome.slice(0,7).toLowerCase()}</small>
+      <div class="cd hidden"></div></div>`;
+  }
   return `<div class="ab vazio">${tec}</div>`;
+}
+
+/* miniatura da figura: a nave no meio e um ponto por drone */
+function iconeFormacao(id) {
+  const f = FORMACOES[id];
+  const pts = pontosFormacao(f).concat(f.unicos);
+  const esc = Math.max(...pts.map(p => Math.max(Math.abs(p.fx), Math.abs(p.fy)))) || 1;
+  // desenhado com a nave apontando para cima, igual ao desenho no papel
+  const bolas = pts.map(p =>
+    `<circle cx="${(12 + p.fy / esc * 10).toFixed(1)}" cy="${(12 - p.fx / esc * 10).toFixed(1)}" r="1.5"/>`).join("");
+  return `<svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" style="display:block;margin:0 auto">
+    ${bolas}<path d="M12 8.6 L14 14.4 L12 13.1 L10 14.4 Z"/></svg>`;
 }
 
 /* Aciona o que estiver no espaço: munição ataca, foguete dispara,
@@ -2794,6 +3608,11 @@ function acionarCelula(r, c) {
   const p = G.player;
 
   if (cel.k === "hab") { usarHab(cel.id); return; }
+  if (cel.k === "form") {
+    if (!temFormacao(cel.id)) { toast("Compre a formação " + FORMACOES[cel.id].nome + " na loja"); return; }
+    escolherFormacao(cel.id);
+    return;
+  }
   if (cel.k === "mod") {
     if (cel.id === "VEU")  return alternarVeu();
     if (cel.id === "NOVA") return dispararNova();
@@ -2803,12 +3622,11 @@ function acionarCelula(r, c) {
   }
 
   // munição e foguete miram sozinhos se não houver alvo
-  const valido = p.alvo && G.inimigos.includes(p.alvo) &&
+  const valido = alvoOk(p.alvo) &&
                  dist(p.x, p.y, p.alvo.x, p.alvo.y) <= ALCANCE_AUTO;
   if (!valido) p.alvo = alvoMaisProximo();
 
   if (cel.k === "ammo") {
-    if (AMMO[cel.id] && AMMO[cel.id].rajada) return dispararRajada(cel.id);
     // apertar de novo a munição que já está atirando cancela o ataque
     if (p.atacando && G.ammoSel === cel.id) {
       p.atacando = false;
@@ -2848,6 +3666,8 @@ function rotuloCurto(cel) {
   if (cel.k === "ammo") return `<div style="font-size:11px">×${AMMO[cel.id] ? AMMO[cel.id].mult : "?"}</div><small>mun</small>`;
   if (cel.k === "fog")  return `<div>➤</div><small>fog</small>`;
   if (cel.k === "proj") return `<div>❂</div><small>salva</small>`;
+  if (cel.k === "form") return FORMACOES[cel.id]
+    ? `<div style="color:${FORMACOES[cel.id].cor}">${iconeFormacao(cel.id)}</div><small>form</small>` : "";
   return "";
 }
 
@@ -2887,6 +3707,8 @@ function legendaPaleta(k, id) {
   if (k === "proj") return fmt(PROJETEIS[id].dmg) + " por míssil";
   if (k === "hab")  { const a = ABILITIES.find(x => x.id === id); return a ? "tecla " + a.tecla : ""; }
   if (k === "mod")  return temModulo(id) ? "equipado" : "sem o módulo";
+  if (k === "form") { const f = FORMACOES[id];
+    return !temFormacao(id) ? "não comprada" : f.bonus ? f.bonus.texto : "sem bônus"; }
   return "";
 }
 
@@ -2929,6 +3751,8 @@ function abrirEditorBarra() {
       ${grupo("Habilidades", ABILITIES.map(a => ({ k:"hab", id:a.id, nome:a.nome })))}
       ${grupo("Módulos", Object.keys(ITEMS.modulo).filter(id => MODULO_MANUAL[id])
               .map(id => ({ k:"mod", id, nome:ITEMS.modulo[id].nome })))}
+      ${grupo(`Formação de drones (a partir de ${FORMACAO_MIN} drones)`,
+              FORMACAO_ORDEM.map(id => ({ k:"form", id, nome:FORMACOES[id].nome })))}
     </div>
     <div class="foot">
       <button onclick="G.barra=barraPadrao();montarBarraHab();abrirEditorBarra()">Voltar ao padrão</button>
@@ -2965,6 +3789,40 @@ function montarBarraHab() {
 }
 
 
+/* card do pet, logo abaixo do card do piloto */
+function atualizarCardPet() {
+  const card = el("petCard"), pet = G.pet, gp = el("gainPanel");
+  if (!card) return;
+  if (!pet || !pet.tem) {                       // sem pet o feed de ganhos sobe de volta
+    card.style.display = "none";
+    if (gp) gp.style.top = "168px";
+    return;
+  }
+  card.style.display = "block";
+  if (gp) gp.style.top = (card.offsetHeight ? 176 + card.offsetHeight : 262) + "px";
+
+  const mxH = petMaxHp(), mxS = petMaxShield();
+  el("petNome").textContent = nomeDoPet();
+  el("petNivel").textContent = `nível ${pet.nivel} de ${PET_NIVEL_MAX}`;
+
+  el("petHpBar").style.width = (100*clamp(pet.hp/mxH,0,1)) + "%";
+  el("petHpTxt").textContent = `${fmt(Math.round(pet.hp))} / ${fmt(mxH)} de vida`;
+  el("petShBar").style.width = (mxS > 0 ? 100*clamp(pet.sh/mxS,0,1) : 0) + "%";
+  el("petShTxt").textContent = `${fmt(Math.round(pet.sh))} / ${fmt(mxS)} de escudo`;
+
+  const prox = petProxXp(pet.nivel), base = PET_XP[pet.nivel - 1] || 0;
+  el("petXpBar").style.width = (prox ? 100*clamp((pet.xp-base)/(prox-base),0,1) : 100) + "%";
+  el("petXpTxt").textContent = prox
+    ? `${fmt(pet.xp - base)} / ${fmt(prox - base)} XP para o nível ${pet.nivel+1}`
+    : "nível máximo";
+
+  el("petConserto").style.display = pet.abatido ? "block" : "none";
+
+  const btn = el("petBtn");
+  btn.textContent = pet.ativo ? "LIGADO" : "DESLIGADO";
+  btn.classList.toggle("off", !pet.ativo);
+}
+
 function atualizarHUD() {
   const p = G.player;
   el("pName").textContent = G.nome;
@@ -2993,7 +3851,15 @@ function atualizarHUD() {
     }).join(" · ");
 
   const tp = el("targetPanel");
-  if (p.alvo) {
+  if (alvoEhPet(p.alvo)) {                        // mirando no próprio pet
+    const mxS = petMaxShield();
+    tp.style.display = "block";
+    el("tgName").textContent = `${nomeDoPet()} [${G.nome}]`;
+    el("tgName").style.color = "#61e08a";
+    el("tgSh").style.width = (mxS > 0 ? 100*clamp(p.alvo.sh/mxS,0,1) : 0) + "%";
+    el("tgHp").style.width = (100*clamp(p.alvo.hp/petMaxHp(),0,1)) + "%";
+    el("tgInfo").textContent = Math.round(dist(p.x,p.y,p.alvo.x,p.alvo.y)) + "m · seu pet · não revida";
+  } else if (p.alvo) {
     const ed = p.alvo.d;
     tp.style.display = "block";
     el("tgName").textContent = ed.nome;
@@ -3003,6 +3869,8 @@ function atualizarHUD() {
     el("tgInfo").textContent = Math.round(dist(p.x,p.y,p.alvo.x,p.alvo.y)) + "m · " +
       fmt(ed.cred) + " cr · " + fmt(ed.xp) + " xp" + (ed.honra ? " · " + fmt(ed.honra) + " honra" : "");
   } else tp.style.display = "none";
+
+  atualizarCardPet();
 
   // feed de recompensas
   ganhos = ganhos.filter(g => G.tempo - g.t < 9000);
@@ -3100,6 +3968,11 @@ function atualizarHUD() {
   for (const k of PROJ_ORDER)
     marcarCd(el("ab_proj_" + k), (p.lancCd || 0) - G.tempo, G.projetilSel === k);
 
+  // a espera da troca vale para todas as formações ao mesmo tempo
+  const ativa = formacaoAtiva();
+  for (const k of FORMACAO_ORDEM)
+    marcarCd(el("ab_form_" + k), (G.formacaoCd || 0) - G.tempo, ativa === k);
+
   // bolinhas do lança-mísseis acendendo conforme a carga
   const nTubos = misseisPorSalva();
   if (nTubos && el("lancIndic")) {
@@ -3132,7 +4005,7 @@ function toggleFullscreen() {
 
 let painelAtual = "loja";   // "loja" (só compra) ou "equip" (o resto)
 let abaEquip = "nave";
-const ABAS_EQUIP = [["nave","Nave e equipamento"],["drones","Drones"],["muni","Munição"],
+const ABAS_EQUIP = [["nave","Nave e equipamento"],["drones","Drones"],["pet","Pet"],["muni","Munição"],
                     ["vender","Vender carga"],["skylab","Skylab"],["reparo","Reparo"]];
 const barraAbas = (abas, atual, fn) => `<div class="tabs">` + abas.map(([id,n]) =>
   `<button class="mini ${atual === id ? "primary" : ""}" onclick="${fn}('${id}')">${n}</button>`).join("") + `</div>`;
@@ -3203,6 +4076,17 @@ function colLoja() {
   h += secaoLoja(`Drones — ${nc}/${DRONE_MAX} comuns e ${nu}/${DRONE_UNICOS.length} únicos`,
     Object.entries(DRONE_TIPOS).map(([k,dt]) =>
       quadradoLoja("drone", k, dt.nome, fmt(droneCusto(k, nc)) + " cr", dt.cor)).join(""));
+
+  h += secaoLoja("Pet", quadradoLoja("pet", "pet", "Pet",
+    G.pet && G.pet.tem ? `nível ${G.pet.nivel}/${PET_NIVEL_MAX}` : fmt(PET_PRECO) + " cr", PET_COR));
+
+  h += secaoLoja(`Formação de drones — a partir de ${FORMACAO_MIN} drones`,
+    FORMACAO_ORDEM.map(k => {
+      const f = FORMACOES[k];
+      const preco = !f.preco ? "grátis"
+                  : temFormacao(k) ? "comprada" : fmt(f.preco) + " cr";
+      return quadradoLoja("form", k, f.nome, preco, f.cor);
+    }).join(""));
 
   h += secaoLoja("Melhorias permanentes", UPGRADES.map(u =>
     quadradoLoja("up", u.id, u.nome, `nv ${G.up[u.id]}/${u.max}`)).join(""));
@@ -3314,6 +4198,35 @@ function detalheLoja() {
           : botaoCompra(custo, `comprarDrone('${id}')`, "Comprar drone");
   }
 
+  else if (cat === "pet") {
+    const pet = G.pet, f = petFaixa(pet.nivel);
+    nome = "Pet"; cor = PET_COR;
+    desc = "Fica parado num canto perto da nave. Quando você anda ele leva 1 segundo para sair atrás; quando você para, ele escolhe outro canto ali do lado e para também. Atacando, fica trocando de lugar em volta do inimigo. Atira em quem você estiver atacando e revida sozinho em quem abrir fogo em você, mesmo enquanto te segue. Tem vida e escudo próprios e usa as mesmas peças da nave — canhão e escudo saem do mesmo depósito. Sobe do nível 1 ao " + PET_NIVEL_MAX + " ganhando o mesmo XP que você, e cada faixa abre mais vida e mais encaixes.";
+    info = linha("Vida na faixa atual", fmt(f.hp)) +
+           linha("Encaixes agora", `${f.laser} canhão · ${f.escudo} escudo · ${f.petmod} módulo de pet`) +
+           linha("No nível 15", `${fmt(PET_FAIXAS[4].hp)} de vida · 12/15/6 encaixes`) +
+           linha("Se for destruído", `conserto por ${fmt(PET_CONSERTO)} cr, volta com ${fmt(PET_VOLTA_HP)} de casco e ${fmt(PET_VOLTA_SH)} de escudo`) +
+           (pet.tem ? linha("Nível", `${pet.nivel} de ${PET_NIVEL_MAX}`) : linha("Preço", fmt(PET_PRECO) + " cr"));
+    acoes = pet.tem ? `<span class="tag ok">você já tem um pet</span>
+              <button class="mini" onclick="abaE('pet')">Equipar o pet</button>`
+          : botaoCompra(PET_PRECO, "comprarPet()", "Comprar pet");
+  }
+
+  else if (cat === "form") {
+    const f = FORMACOES[id], tem = temFormacao(id), ativa = formacaoAtiva() === id;
+    nome = "Formação " + f.nome; cor = f.cor;
+    desc = f.desc + " Depois de comprada ela vai para a barra de ações, no editor, junto com a munição — o espaço dela troca a formação em pleno voo.";
+    info = linha("Bônus", f.bonus ? f.bonus.texto : "nenhum") +
+           linha("Exige", FORMACAO_MIN + " drones ou mais") +
+           linha("Sua frota", G.drones.length + " drones") +
+           (f.preco ? linha("Preço", fmt(f.preco) + " cr") : "");
+    const poucos = G.drones.length < FORMACAO_MIN && id !== "normal";
+    acoes = (!tem ? botaoCompra(f.preco, `comprarFormacao('${id}')`, "Comprar formação")
+           : ativa ? `<span class="tag ok">em uso agora</span>`
+           : `<button class="primary" onclick="escolherFormacao('${id}')">Usar esta formação</button>`)
+          + (poucos ? `<span class="tag warn">precisa de ${FORMACAO_MIN} drones para voar assim</span>` : "");
+  }
+
   else if (cat === "up") {
     const u = UPGRADES.find(x => x.id === id), n = G.up[id];
     nome = u.nome;
@@ -3365,6 +4278,7 @@ function quadrado(id, destino, rotulo) {
   const it = t ? ITEMS[t][id] : null;
   const dest = JSON.stringify(destino).replace(/"/g, "'");
   const tirar = destino.k === "nave" ? `tirarDaNave('${destino.cat}',${destino.i})`
+              : destino.k === "pet"  ? `tirarDoPet('${destino.cat}',${destino.i})`
                                      : `tirarDoDrone(${destino.di},${destino.si})`;
   return `<div class="slot ${id ? "cheio" : ""}"
     ${id ? `draggable="true" ondragstart="pegar(${dest})"` : ""}
@@ -3460,16 +4374,92 @@ function colDrones() {
   return h;
 }
 
+/* coluna da esquerda quando a aba é Pet */
+function colPet() {
+  const pet = G.pet;
+  if (!pet || !pet.tem)
+    return `<div class="muted">Você ainda não tem um pet. Compre um na Loja por ${fmt(PET_PRECO)} cr.</div>`;
+
+  const f = petFaixa(pet.nivel), prox = petProxXp(pet.nivel), base = PET_XP[pet.nivel-1] || 0;
+  let h = `<div class="row" style="padding-top:0">
+    <div><div class="val" style="color:${PET_COR}">${nomeDoPet()}
+        <span class="muted">nível ${pet.nivel} de ${PET_NIVEL_MAX}</span></div>
+      <div class="muted">${fmt(Math.round(pet.hp))}/${fmt(petMaxHp())} de vida ·
+        ${fmt(Math.round(pet.sh))}/${fmt(petMaxShield())} de escudo ·
+        ${Math.round(petDano())} de dano por tiro
+        <span style="opacity:.75">(${Math.round(petDanoBase())} × ${calibrePet().mult} da ${calibrePet().nome})</span></div>
+      ${pet.abatido ? `<div class="muted" style="color:#ff9a9a">destruído — o casco não se recupera sozinho</div>` : ""}
+      <div class="muted">${prox ? `${fmt(pet.xp - base)} / ${fmt(prox - base)} XP para o nível ${pet.nivel+1}`
+                                : "nível máximo"}</div>
+      <div class="bar" style="width:200px"><i class="xpF"
+        style="width:${prox ? Math.min(100, 100*(pet.xp-base)/(prox-base)) : 100}%"></i></div></div>
+    <div style="text-align:right">
+      ${pet.abatido
+        ? `<button class="primary" ${G.creditos >= PET_CONSERTO ? "" : "disabled"}
+             onclick="consertarPet();renderEquip()">Consertar — ${fmt(PET_CONSERTO)} cr</button>`
+        : `<button class="mini ${pet.ativo ? "" : "primary"}" onclick="alternarPet();renderEquip()">
+             ${pet.ativo ? "Desligar" : "Ligar"}</button>`}
+    </div>
+  </div>
+
+  <div class="row">
+    <div style="flex:1">
+      <div class="lbl">Nome do pet — aparece embaixo dele no mapa</div>
+      <input id="petNomeInput" maxlength="14" autocomplete="off" spellcheck="false"
+        value="${nomeDoPet().replace(/"/g, "&quot;")}"
+        onkeydown="event.stopPropagation(); if(event.key==='Enter'){event.preventDefault();batizarPet();}"
+        onkeyup="event.stopPropagation()" onkeypress="event.stopPropagation()"
+        style="width:100%;max-width:240px;margin-top:4px;padding:6px 8px;border-radius:6px;
+               background:rgba(8,16,32,.9);border:1px solid rgba(90,160,230,.45);color:#eaf4ff;font:inherit">
+    </div>
+    <button class="mini primary" onclick="batizarPet()">Dar o nome</button>
+  </div>`;
+
+  h += `<div class="lbl" style="margin-top:8px">Configuração ${G.cfgAtiva+1} — a mesma da nave</div>
+    <div class="cfgLinha">` +
+    [0,1].map(i => `<button class="${G.cfgAtiva === i ? "primary" : ""}" onclick="trocarConfig(${i})">
+        Configuração ${i+1}</button>`).join("") +
+    `</div><div class="muted" style="margin-bottom:8px">O pet guarda duas montagens e divide as peças
+      entre elas, igual à nave. Usa o mesmo depósito de canhões e escudos — o que estiver nele
+      não está disponível para a nave nem para os drones. Os encaixes aumentam a cada faixa de nível.</div>`;
+
+  for (const cat of PET_CATS) {
+    const arr = pet.eq[cat] || [];
+    const cheios = arr.filter(Boolean).length;
+    h += `<div class="secHead">
+        <span class="lbl">${PET_TITULO[cat]} — ${cheios}/${arr.length}</span>
+        <button class="mini danger" ${cheios ? "" : "disabled"}
+          onclick="limparCategoriaPet('${cat}')">Remover todos</button>
+      </div><div class="slotGrid">` +
+      arr.map((id,i) => quadrado(id, { k:"pet", cat, i })).join("") + `</div>`;
+    if (cat === "petmod" && !Object.keys(ITEMS.petmod).length)
+      h += `<div class="muted" style="margin-top:4px">Os encaixes de módulo de pet já existem —
+        falta só definir quais módulos vão entrar aqui.</div>`;
+  }
+
+  h += `<div class="lbl" style="margin-top:10px">Faixas de nível</div>` +
+    PET_FAIXAS.map((x,i) => {
+      const de = i === 0 ? 1 : PET_FAIXAS[i-1].ate + 1;
+      const aqui = pet.nivel >= de && pet.nivel <= x.ate;
+      return `<div class="row"><div class="${aqui ? "val" : "muted"}">
+          Nível ${de === x.ate ? de : de + " a " + x.ate}${aqui ? " · atual" : ""}</div>
+        <div class="muted">${fmt(x.hp)} de vida · ${x.laser} canhão · ${x.escudo} escudo · ${x.petmod} módulo</div>
+      </div>`;
+    }).join("");
+
+  return h;
+}
+
 /* coluna da direita: o depósito */
 /* um quadrado do depósito representa UMA unidade solta do item */
 const TITULO_SEC = { laser:"Canhões", lancador:"Lança-mísseis", escudo:"Escudos",
-                     motor:"Motores", modulo:"Módulos" };
+                     motor:"Motores", modulo:"Módulos", petmod:"Módulos de pet" };
 
 /* Venda em tela própria, sempre com confirmação. */
 function abrirVenda() {
   if (!exigeBase()) return;
   let corpo = "";
-  for (const t of ["laser","lancador","escudo","motor","modulo"]) {
+  for (const t of ["laser","lancador","escudo","motor","modulo","petmod"]) {
     const its = Object.entries(ITEMS[t]).filter(([id]) => possui(t,id) > 0);
     if (!its.length) continue;
     corpo += `<div class="lbl" style="margin-top:12px">${TITULO_SEC[t]}</div>`;
@@ -3488,7 +4478,7 @@ function abrirVenda() {
   }
   abrirModal(`<h1 style="font-size:17px">VENDER ITENS</h1>
     <p class="sub">Aparecem aqui todos os equipamentos que você tem. Só é possível vender
-      o que não está montado na nave nem nos drones. Cada peça sai por metade do preço de compra.</p>
+      o que não está montado na nave, nos drones nem no pet. Cada peça sai por metade do preço de compra.</p>
     ${corpo || `<div class="muted">Você não tem nenhum equipamento no depósito.</div>`}
     <div class="foot"><button onclick="renderEquip()">Voltar</button></div>`);
 }
@@ -3523,8 +4513,10 @@ function quadradoInv(t, id, ctx) {
   const it = ITEMS[t][id];
   const org = `{k:'inv',t:'${t}',id:'${id}'}`;
   const dica = t === "modulo" ? it.desc : textoItem(t, id);
-  const destino = ctx === "drones" ? "mandarParaDrone" : "mandarParaNave";
-  const alvo = ctx === "drones" ? "no primeiro encaixe livre dos drones" : "no primeiro encaixe livre da nave";
+  const destino = ctx === "drones" ? "mandarParaDrone" : ctx === "pet" ? "mandarParaPet" : "mandarParaNave";
+  const alvo = ctx === "drones" ? "no primeiro encaixe livre dos drones"
+             : ctx === "pet" ? "no primeiro encaixe livre do pet"
+             : "no primeiro encaixe livre da nave";
   return `<div class="slot cheio" draggable="true" ondragstart="pegar(${org})"
     ondblclick="${destino}('${t}','${id}')"
     title="${it.nome} — ${dica}. Arraste para um encaixe ou dê dois cliques para montar ${alvo}.">
@@ -3547,29 +4539,34 @@ const folgaDronesMax = id => G.drones.length
   ? Math.max(0, ...G.drones.map((_,di) => folgaDrone(di, id))) : 0;
 
 function colItens(ctx) {
-  const paraDrones = ctx === "drones";
+  const paraDrones = ctx === "drones", paraPet = ctx === "pet";
+  const paraNave = !paraDrones && !paraPet;
   let h = "", total = 0;
   const titulo = { laser:"Canhões", escudo:"Escudos", motor:"Motores",
-                   modulo:"Módulos", lancador:"Lança-mísseis" };
+                   modulo:"Módulos", lancador:"Lança-mísseis", petmod:"Módulos de pet" };
   const rotulo = { laser:"Adicionar os melhores canhões", escudo:"Adicionar os melhores escudos",
                    motor:"Adicionar os melhores motores", modulo:"Adicionar módulos",
                    lancador:"Adicionar os melhores lançadores" };
   const nota   = { escudo:" · vão no encaixe de gerador", motor:" · vão no encaixe de gerador" };
-  // drone só aceita canhão e escudo, e os botões de preencher são só da nave
-  const tipos = paraDrones ? ["laser","escudo"] : ["laser","lancador","escudo","motor","modulo"];
+  // drone aceita canhão e escudo; o pet aceita também os módulos dele
+  const tipos = paraDrones ? ["laser","escudo"]
+              : paraPet    ? ["laser","escudo","petmod"]
+              : ["laser","lancador","escudo","motor","modulo"];
 
   for (const t of tipos) {
     let quadros = "", n = 0;
     // depósito também na ordem do mais fraco para o mais forte
     const ids = Object.keys(ITEMS[t]).sort((a,b) => pesoItem(a) - pesoItem(b));
     for (const id of ids) {
-      const l = paraDrones ? livres(t,id) + folgaDronesMax(id) : disponivel(t,id);
+      const l = paraDrones ? livres(t,id) + folgaDronesMax(id)
+              : paraPet    ? livres(t,id) + folgaPet(id)
+              : disponivel(t,id);
       for (let k = 0; k < l; k++) { quadros += quadradoInv(t, id, ctx); n++; }
     }
     total += n;
     h += `<div class="secHeadV">
-        <span class="lbl">${titulo[t]} — ${n} ${n === 1 ? "unidade" : "unidades"}${paraDrones ? "" : (nota[t] || "")}</span>
-        ${paraDrones ? "" : `<button class="mini" onclick="preencherCom('${t}')">${rotulo[t]}</button>`}
+        <span class="lbl">${titulo[t]} — ${n} ${n === 1 ? "unidade" : "unidades"}${paraNave ? (nota[t] || "") : ""}</span>
+        ${paraNave ? `<button class="mini" onclick="preencherCom('${t}')">${rotulo[t]}</button>` : ""}
       </div>`;
     // completa a fileira com quadrados vazios; seção sem nada mostra uma fileira inteira
     const faltam = n === 0 ? POR_FILEIRA : (POR_FILEIRA - (n % POR_FILEIRA)) % POR_FILEIRA;
@@ -3589,11 +4586,18 @@ function renderEquip() {
   normalizarEquip();
   let c = "";
 
-  if (abaEquip === "muni") c += AMMO_ORDER.map((k,i) => {
+  const cNave = Math.max(1, canhoesNave()), cPet = canhoesPet();
+  if (abaEquip === "muni") c += `<div class="muted" style="margin-bottom:6px">
+      Cada tiro gasta uma unidade por canhão que participou dele:
+      <b>${cNave}</b> por tiro seu (nave + drones)${cPet ? ` e <b>${cPet}</b> por tiro do pet` : ""}.
+      A ${AMMO.lcb10.nome} é ilimitada e nunca é descontada.</div>` +
+    AMMO_ORDER.map((k,i) => {
     const a = AMMO[k];
+    const estoque = G.municao[k] || 0;
+    const tiros = a.infinita ? "" : ` · dá para ${Math.floor(estoque / cNave)} tiro(s) seu(s)`;
     return `<div class="row">
       <div><div class="val">${a.nome} <span class="muted">×${a.mult} · tecla ${i+1}</span></div>
-        <div class="muted">${a.infinita ? "ilimitada" : fmt(G.municao[k] || 0) + " no porão"}</div></div>
+        <div class="muted">${a.infinita ? "ilimitada" : fmt(estoque) + " no porão" + tiros}</div></div>
       <button class="mini ${G.ammoSel === k ? "primary" : ""}" onclick="selAmmo('${k}');renderBase()">Usar</button>
     </div>`;
   }).join("") + ROCKET_ORDER.map(k => {
@@ -3647,6 +4651,7 @@ function renderEquip() {
   const corpo =
     abaEquip === "nave"   ? `<div class="duasCol"><div class="col esq">${colNave()}</div><div class="col dir">${colItens("nave")}</div></div>` :
     abaEquip === "drones" ? `<div class="duasCol"><div class="col esq">${colDrones()}</div><div class="col dir">${colItens("drones")}</div></div>` :
+    abaEquip === "pet"    ? `<div class="duasCol"><div class="col esq">${colPet()}</div><div class="col dir">${colItens("pet")}</div></div>` :
     `<div class="col" style="flex:1">${c}</div>`;
 
   abrirModal(cab + corpo, true);
@@ -3832,12 +4837,17 @@ function itemDaOrigem(o) {
   if (o.k === "inv")   return o.id;
   if (o.k === "nave")  return G.equip[o.cat][o.i];
   if (o.k === "drone") return G.drones[o.di] ? G.drones[o.di].itens[o.si] : null;
+  if (o.k === "pet")   return (G.pet && G.pet.eq && G.pet.eq[o.cat]) ? G.pet.eq[o.cat][o.i] : null;
   return null;
 }
 function limparOrigem(o) {
   if (o.k === "nave")  G.equip[o.cat][o.i] = null;
   if (o.k === "drone" && G.drones[o.di]) G.drones[o.di].itens[o.si] = null;
+  if (o.k === "pet" && G.pet && G.pet.eq && G.pet.eq[o.cat]) G.pet.eq[o.cat][o.i] = null;
 }
+/* qual encaixe do pet aceita cada tipo de item */
+const catPet = t => t === "laser" ? "laser" : t === "escudo" ? "escudo"
+               : t === "petmod" ? "petmod" : null;
 
 function soltarEm(destino) {
   const o = arrasto; arrasto = null;
@@ -3865,12 +4875,23 @@ function soltarEm(destino) {
     }
     G.drones[destino.di].itens[destino.si] = id;
   }
+
+  if (destino.k === "pet") {
+    if (!G.pet || !G.pet.tem) { toast("Você não tem um pet"); return; }
+    if (catPet(t) !== destino.cat) { toast("Esse item não entra nesse encaixe do pet"); return; }
+    limparOrigem(o);
+    if (livres(t,id) + folgaPet(id) <= 0) {
+      toast("Sem essa peça sobrando — pode estar em outra nave"); depoisDeMexer(); return;
+    }
+    G.pet.eq[destino.cat][destino.i] = id;
+  }
   depoisDeMexer();
 }
 
 function depoisDeMexer() {
   ordenarEquip();
   G.player.sh = Math.min(G.player.sh, maxShield());
+  if (G.pet) G.pet.sh = Math.min(G.pet.sh, petMaxShield());
   if (!temModulo("VEU")) G.player.veuAtivo = false;
   montarBarraHab();          // módulos entram e saem da barra de botões
   renderEquip();
@@ -3935,6 +4956,31 @@ function mandarParaDrone(t, id) {
   toast(G.drones.length ? "Todos os encaixes dos drones estão cheios" : "Nenhum drone acoplado");
 }
 
+/* Dois cliques no depósito, na aba Pet: monta no primeiro encaixe livre
+   do tipo certo, da esquerda para a direita. */
+function mandarParaPet(t, id) {
+  if (!exigeBase()) return;
+  if (!G.pet || !G.pet.tem) { toast("Você não tem um pet"); return; }
+  const cat = catPet(t);
+  if (!cat) { toast("O pet só aceita canhão, escudo e módulo de pet"); return; }
+  const arr = G.pet.eq[cat] || [];
+  const i = arr.indexOf(null);
+  if (i < 0) { toast(`Nenhum encaixe de ${PET_TITULO[cat].toLowerCase()} livre no pet`); return; }
+  if (livres(t,id) + folgaPet(id) <= 0) { toast("Sem essa peça sobrando"); return; }
+  arr[i] = id;
+  depoisDeMexer();
+}
+function tirarDoPet(cat, i) {
+  if (!exigeBase()) return;
+  if (G.pet && G.pet.eq && G.pet.eq[cat]) G.pet.eq[cat][i] = null;
+  depoisDeMexer();
+}
+function limparCategoriaPet(cat) {
+  if (!exigeBase()) return;
+  if (G.pet && G.pet.eq && G.pet.eq[cat]) G.pet.eq[cat].fill(null);
+  depoisDeMexer();
+}
+
 function tirarDaNave(cat, i) { if (!exigeBase()) return; G.equip[cat][i] = null; depoisDeMexer(); }
 function tirarDoDrone(di, si) { if (!exigeBase()) return; G.drones[di].itens[si] = null; depoisDeMexer(); }
 function comprarAmmo(k,q) {
@@ -3966,6 +5012,79 @@ function resumoDrone(d) {
   if (dano) partes.push(`+${dano} dano e +${bd}%`);
   if (esc)  partes.push(`+${fmt(esc)} escudo e +${be}%`);
   return partes.join("<br>");
+}
+
+/* ---- formações ---- */
+
+/* O escudo extra da Protetora é emprestado: ao sair dela o teto cai e o que
+   estava acima do teto novo se perde, voltando ao escudo de sempre. Entrar
+   nela só levanta o teto — quem enche de volta é a regeneração. */
+function ajustarEscudoDaFormacao(escudoAntes) {
+  const p = G.player;
+  if (!p) return;
+  const agora = maxShield();
+  if (agora >= escudoAntes) return;                 // ganhou teto: não mexe no que tem
+  p.sh = Math.min(p.sh, agora);
+  // a config parada não é tocada aqui: trocarCfg já corta pelo teto dela ao voltar
+}
+
+function comprarFormacao(id) {
+  const f = FORMACOES[id];
+  if (!f || temFormacao(id)) return;
+  if (G.creditos < f.preco) return;
+  G.creditos -= f.preco;
+  G.formacoes.push(id);
+  G.formacaoCd = 0;                 // acabou de comprar: entra na hora
+  escolherFormacao(id);
+  logar("Comprou a formação " + f.nome + ".");
+  renderBase();
+}
+
+function escolherFormacao(id) {
+  const f = FORMACOES[id];
+  if (!f || !temFormacao(id)) return;
+  if (id === G.formacaoSel) return;
+  const resta = (G.formacaoCd || 0) - G.tempo;
+  if (resta > 0) { toast(`Drones reagrupando — ${Math.ceil(resta/1000)}s`); return; }
+
+  const escudoAntes = maxShield();
+  G.formacaoCd = G.tempo + FORMACAO_ESPERA;
+  G.formacaoSel = id;                              // os drones deslizam sozinhos até o lugar novo
+  ajustarEscudoDaFormacao(escudoAntes);
+
+  if (id !== "normal" && G.drones.length < FORMACAO_MIN)
+    toast(`Formação ${f.nome} guardada — voa com ${FORMACAO_MIN} drones ou mais`);
+  else
+    toast("Formação " + f.nome + (f.bonus ? " · " + f.bonus.texto : ""));
+  montarBarraHab();
+  // só redesenha o painel se ele já estiver aberto — trocar em voo não abre a loja
+  const m = el("modal");
+  if (m && !m.classList.contains("hidden")) renderBase();
+}
+
+function batizarPet() {
+  const campo = el("petNomeInput");
+  if (!campo || !G.pet || !G.pet.tem) return;
+  const novo = campo.value.trim().slice(0, 14);
+  if (!novo) { toast("Escolha um nome para o pet"); return; }
+  G.pet.nome = novo;
+  toast("Agora ele se chama " + novo);
+  logar("Batizou o pet de " + novo + ".");
+  renderEquip();
+}
+
+function comprarPet() {
+  if (G.pet && G.pet.tem) return;
+  if (G.creditos < PET_PRECO) return;
+  G.creditos -= PET_PRECO;
+  G.pet = petNovo();
+  G.pet.tem = true;
+  normalizarPet();
+  G.pet.hp = petMaxHp();
+  G.pet.x = G.player.x; G.pet.y = G.player.y;
+  toast("Pet adquirido — nível 1");
+  logar("Adotou um pet.");
+  renderBase();
 }
 
 function comprarDrone(tipo) {
@@ -4077,7 +5196,7 @@ function entregarMissao(id) {
   const m = G.missoes.find(x => x.id === id);
   if (!m || m.prog < m.qtd) return;
   G.creditos += m.rec.cred; G.stats.ganho += m.rec.cred;
-  ganharXp(m.rec.xp); G.honra += m.rec.honra || 0;
+  ganharXp(m.rec.xp); ganharHonra(m.rec.honra || 0);
   G.missoes = G.missoes.filter(x => x.id !== id);
   G.stats.missoes++;
   toast("Missão entregue: +" + fmt(m.rec.cred) + " cr");
@@ -4185,21 +5304,27 @@ function openHelp() {
     <div class="row"><div class="val">Portal</div><div class="muted">chegando perto aparece o botão <b>Saltar</b> na tela; a tecla <b>J</b> leva a nave até o portal e aciona sozinha. A carga leva 2,5s e sair de perto cancela</div></div>
     <div class="row"><div class="val">Fora do setor</div><div class="muted">o mapa não tem parede: passando da borda aparece DANGER em vermelho e, depois de 3 segundos, o casco começa a ceder até você voltar</div></div>
     <div class="row"><div class="val">T / G / M / P / L</div><div class="muted">missões · clã · mapa · perfil · log</div></div>
+    <div class="row"><div class="val">Gasto de munição</div><div class="muted">cada tiro desconta uma unidade por canhão que participou dele: os da nave mais os montados nos drones num tiro seu, e os do pet num tiro dele. Mais canhão significa mais dano e também mais consumo. A LCB-10 é ilimitada e nunca é descontada; acabando a munição escolhida, você volta para ela sozinho. A aba Munição em Equipamentos mostra o custo por tiro e para quantos tiros o porão dá</div></div>
     <div class="row"><div class="val">Recompensas</div><div class="muted">créditos, XP e honra entram sozinhos ao abater — aparecem listados no canto superior esquerdo</div></div>
     <div class="row"><div class="val">Carga e caixas</div><div class="muted">ficam boiando no espaço: clique nelas e a nave vai até lá e recolhe ao chegar</div></div>
     <div class="row"><div class="val">Portal de invasão</div><div class="muted">elites com 3× recompensa, some depois de 70s</div></div>
     <div class="row"><div class="val">Zona contestada</div><div class="muted">pilotos de outras facções dão honra e patente</div></div>
     <div class="row"><div class="val">Clicar e segurar</div><div class="muted">a nave segue o cursor enquanto o botão estiver pressionado</div></div>
-    <div class="row"><div class="val">Drones</div><div class="muted">Android Demo leva 1 equipamento, Inovat leva 2; sobem de nível abatendo inimigos e voam em formação com a nave</div></div>
+    <div class="row"><div class="val">Drones</div><div class="muted">Android Demo leva 1 equipamento, Inovat leva 2; sobem de nível abatendo inimigos e voam em formação com a nave. São 8 vagas para esses dois. Hercules e Zeus são únicos, um de cada, não ocupam vaga nenhuma e voam nas laterais — com tudo comprado a frota chega a 10</div></div>
+    <div class="row"><div class="val">Nome e mira do pet</div><div class="muted">no painel Equipamentos, aba Pet, você escreve o nome dele — ele aparece embaixo do pet no mapa e no card. Clicar no pet também o seleciona como alvo: se quiser, dá para atirar nele e destruí-lo, e ele nunca revida. Destruído, ele não volta sozinho: o card mostra o botão de consertar por 5.000 cr e ele retorna com 1.000 de casco e 1.000 de escudo</div></div>
+    <div class="row"><div class="val">Pet</div><div class="muted">comprado na Loja. Fica parado num canto perto de você; quando a nave anda ele leva 1 segundo para perceber e sair atrás, e quando você para ele escolhe outro canto ali do lado e para também. Em combate ele não fica plantado: vai trocando de lugar em volta do inimigo. Se você sair no meio da briga, esse segundo dá tempo dele mandar mais um tiro, e depois ele te segue continuando a atirar enquanto o inimigo estiver no alcance. Atira em quem você estiver atacando e, se alguém abrir fogo em você sem que você reaja, ele revida sozinho — inclusive enquanto está te seguindo. Os inimigos nunca miram nele — quem apanha é você. Só o escudo dele se recupera; o casco fica como ficou. Se você mesmo destruí-lo, ele não volta com o tempo: sai por 5.000 cr no botão Consertar, e retorna com 1.000 de casco e 1.000 de escudo. Sobe do nível 1 ao 15 ganhando o mesmo XP que você, e cada faixa abre mais vida e mais encaixes: 1-3 · 50.000 e 2/3/2 · 4-7 · 55.000 e 4/6/3 · 8-11 · 65.000 e 6/9/4 · 12-14 · 80.000 e 10/12/5 · 15 · 100.000 e 12/15/6. Usa as mesmas peças da nave — o que está nele não está livre para a nave nem para os drones. Ele tem duas configurações, que trocam junto com a sua pela tecla C, cada uma com o próprio escudo. O multiplicador do calibre em uso (×1, ×2, ×3, ×4 e ×5) também vale para o tiro dele, esteja você atacando ou não, e o tiro dele desconta do seu porão pelos canhões que ele carrega — no ×5 o resfriamento de 2s da RSB-300 é um só para os dois: se ele disparar, a sua fica recarregando junto, e o contrário também. O card dele fica embaixo do card do piloto, mostrando nível, vida, escudo e experiência, com o botão de ligar e desligar. No mapa o nome dele aparece em verde logo abaixo, com o seu entre colchetes ao lado</div></div>
+    <div class="row"><div class="val">Formação de drones</div><div class="muted">comprada na loja e acionada por um espaço da barra, que troca a figura em pleno voo. Ataque +10% de dano de canhão · Alvo +10% de dano de míssil e foguete · Protetora +10% de escudo · Caranguejo +10% de honra · Barreira +10% de XP. A Normal é de graça e não dá bônus. Só voa em formação com 6 drones ou mais; abaixo disso a nave cai na Normal sozinha. Cada troca tem 5s de espera antes da próxima. O escudo a mais da Protetora é emprestado: saindo dela o teto cai e o que passava do teto novo se perde — para ter de volta é só usar ela outra vez</div></div>
     <div class="row"><div class="val">Escudo</div><div class="muted">4s depois do último dano ele volta em pulsos: 15% do máximo a cada meio segundo, andando ou parado. Os geradores definem quanto do dano ele segura: SG-1 50%, SG-2 60%, SG-3 80%, SG-4 85% — o resto passa direto para o casco</div></div>
     <div class="row"><div class="val">Configurações</div><div class="muted">a nave tem duas montagens independentes: monte uma de escudo e outra de velocidade, por exemplo. Troque a qualquer momento pela engrenagem no card do piloto ou pela tecla C — cada troca tem 3s de espera antes da próxima. O casco é o mesmo para as duas e não se recupera ao trocar; já o escudo é separado, cada configuração tem o seu e só regenera enquanto está ativa. Os drones também têm duas montagens e trocam junto com a nave. As duas configurações de uma mesma nave dividem as peças, mas o equipamento fica preso àquela nave: para montar em outra, é preciso desmontar ou comprar mais</div></div>
     <div class="row"><div class="val">Cor do laser</div><div class="muted">com todos os encaixes cheios de LF-3 o tiro fica azul; só de LF-4, branco acinzentado</div></div>
     <div class="row"><div class="val">Casco</div><div class="muted">a contagem de 3s corre a partir do último dano, mesmo voando; passados os 3s, basta parar a nave que o reparo começa na hora</div></div>
     <div class="row"><div class="val">Zona segura</div><div class="muted">dentro do anel ninguém te ataca e você repara de graça — os inimigos circulam por lá, só não podem atirar</div></div>
-    <div class="row"><div class="val">Revide</div><div class="muted">dentro da zona só quem você atacou consegue te acertar, e por 5s depois do seu último tiro nele; qualquer outro inimigo tem o disparo barrado, mesmo os que já estavam no ar</div></div>
+    <div class="row"><div class="val">Revide</div><div class="muted">dentro da zona só quem você atacou consegue te acertar, e por 5s depois do seu último tiro nele; qualquer outro inimigo tem o disparo barrado, mesmo os que já estavam no ar. O tiro do pet não estica esse prazo: o inimigo para nos 5s mesmo com ele ainda em cima. O pet, por sua vez, não tem prazo — uma vez engajado ele só larga quando o inimigo morre ou sai do alcance dele</div></div>
     <div class="row"><div class="val">Minimapa</div><div class="muted">clique (ou clique e arraste) no minimapa para viajar até aquele ponto</div></div>
     <div class="row"><div class="val">Morte</div><div class="muted">a tela escurece e mostra quem te abateu: 500 cr para ser resgatado até a base, chegando com casco e escudo zerados e recuperando na doca, ou 1.000 cr para reviver no lugar com metade do casco e metade do escudo da configuração ativa, intocável por 3s</div></div>
     <div class="row"><div class="val">Hangar</div><div class="muted">começa com 1 espaço. No painel Equipamentos, o quadrado com <b>+</b> compra mais um espaço, até 5. Comprando uma nave com o hangar lotado, o jogo pede confirmação e depois mostra as suas naves para você escolher qual sai. Nave repetida não entra</div></div>
+    <div class="row"><div class="val">Visual da Titã</div><div class="muted">a Titã usa uma figura pronta em vez do desenho vetorial: sete quadros da mesma nave vista de cima, de −30° a +30°. Ela deita para o lado enquanto você faz a curva, solta chama pelos motores conforme a velocidade, deixa uma esteira ao acelerar, respira de leve quando está parada e acende quando o escudo apanha. Se o arquivo <b>nave-tita.png</b> não estiver na mesma pasta do jogo, ela volta sozinha para o desenho antigo</div></div>
+    <div class="row"><div class="val">Créditos</div><div class="muted">a figura da Titã foi gerada a partir do modelo <b>Red Goliath Spaceship</b>, de Harold.Llanos no Sketchfab, sob licença CC-BY-4.0</div></div>
     <div class="foot"><button onclick="fecharModal()">Entendi</button></div>`);
 }
 /* ===================== SAVE ===================== */
@@ -4226,9 +5351,12 @@ function serializar() {
     versao: 2, nome:G.nome, faccao:G.faccao, nivel:G.nivel, xp:G.xp, honra:G.honra,
     creditos:G.creditos, nave:G.nave, naves:G.naves, inv:G.inv,
     naveCfg:G.naveCfg, cfgAtiva:G.cfgAtiva, slotsNave:G.slotsNave, up:G.up,
-    municao:G.municao, ammoSel:G.ammoSel, foguetes:G.foguetes, foguetSel:G.foguetSel,
+    municao:G.municao, ammoSel:G.ammoSel, calibre:G.calibre, foguetes:G.foguetes, foguetSel:G.foguetSel,
     projeteis:G.projeteis, projetilSel:G.projetilSel,
     barra: G.barra,
+    formacoes: G.formacoes, formacaoSel: G.formacaoSel,
+    pet: G.pet ? { tem:G.pet.tem, ativo:G.pet.ativo, nome:G.pet.nome, nivel:G.pet.nivel, xp:G.pet.xp,
+                   hp:G.pet.hp, sh:G.pet.sh, shCfg:G.pet.shCfg, cfgs:G.pet.cfgs } : null,
     drones: G.drones.map(d => ({ tipo:d.tipo, abates:d.abates, cfgs:d.cfgs })),
     skylab:G.skylab, carga:G.carga, setor:G.setor, clan:G.clan, clanXp:G.clanXp,
     missoes:G.missoes, oferta:G.oferta, missaoSeq:G.missaoSeq, stats:G.stats, jogado:G.jogado,
@@ -4239,9 +5367,28 @@ function serializar() {
 function aplicarSave(d) {
   G = novoJogo(d.nome || "Piloto", d.faccao || "solaris");
   const campos = ["nivel","xp","honra","creditos","nave","naves","inv","equip","configs","naveCfg","cfgAtiva","slotsNave","barra","up","municao",
-                  "ammoSel","foguetes","foguetSel","projeteis","projetilSel","drones","skylab","carga","setor","clan",
-                  "clanXp","missoes","oferta","missaoSeq","stats","jogado"];
+                  "ammoSel","calibre","foguetes","foguetSel","projeteis","projetilSel","drones","skylab","carga","setor","clan",
+                  "clanXp","missoes","oferta","missaoSeq","stats","jogado","formacoes","formacaoSel"];
   for (const c of campos) if (d[c] !== undefined) G[c] = d[c];
+  // formações: só ficam as que existem hoje; a normal não precisa ser comprada
+  G.formacoes = (Array.isArray(G.formacoes) ? G.formacoes : [])
+    .filter((id,i,a) => FORMACOES[id] && id !== "normal" && a.indexOf(id) === i);
+  if (!FORMACOES[G.formacaoSel] || !temFormacao(G.formacaoSel)) G.formacaoSel = "normal";
+  // pet: saves anteriores ao pet simplesmente não têm um
+  const salvo = d.pet;
+  G.pet = petNovo();
+  if (salvo && typeof salvo === "object") {
+    G.pet.tem = !!salvo.tem;
+    G.pet.ativo = salvo.ativo !== false;
+    G.pet.nome = (typeof salvo.nome === "string" && salvo.nome.trim())
+      ? salvo.nome.trim().slice(0, 14) : "Pet";
+    G.pet.xp = Math.max(0, salvo.xp || 0);
+    G.pet.nivel = clamp(petNivel(G.pet.xp), 1, PET_NIVEL_MAX);
+    if (Array.isArray(salvo.cfgs)) G.pet.cfgs = salvo.cfgs;
+    G.pet.hp = salvo.hp || 0;
+    G.pet.sh = salvo.sh || 0;
+    G.pet.shCfg = Array.isArray(salvo.shCfg) ? salvo.shCfg.slice() : [];
+  }
   for (const t in ITEMS) if (!G.inv[t]) G.inv[t] = {};
   if (!G.equip || typeof G.equip !== "object") G.equip = {};
   G.slotsNave = clamp(G.slotsNave || 1, 1, SLOT_NAVE_MAX);
@@ -4256,6 +5403,7 @@ function aplicarSave(d) {
   }
   G.municao = mun;
   if (!AMMO[G.ammoSel] || AMMO[G.ammoSel].rajada) G.ammoSel = "lcb10";
+  if (!AMMO[G.calibre]) G.calibre = G.ammoSel;      // saves antigos não guardavam o calibre
 
   // projéteis do lança-mísseis
   const proj = {};
