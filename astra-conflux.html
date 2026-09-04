@@ -523,8 +523,9 @@ const RES = {
 };
 
 const ENEMIES = {
-  drone:    { nome:"Drone Errante",   hp:130,  shield:40,   dmg:5,  speed:1.5, range:340, xp:25,   cred:450,   raio:13, cor:"#8fa8c0", drop:{ titanio:[1,2] } },
-  sonda:    { nome:"Sonda Corrosiva", hp:340,  shield:140,  dmg:10, speed:1.8, range:360, xp:70,   cred:1300,  raio:15, cor:"#7fd88f", drop:{ titanio:[2,4], plasma:[0,1] } },
+  /* Passivo: não abre fogo por conta própria, só revida quem atirar nele. */
+  drone:    { nome:"Drone Errante",   hp:1000, shield:1000, dmg:30, speed:1.5, range:340, xp:400,  cred:400,   honra:2, raio:15, cor:"#d05050", passivo:true, sprite:"errante", drop:{ titanio:[1,2] } },
+  sonda:    { nome:"Sonda Corrosiva", hp:2000, shield:2000, dmg:80, speed:1.8, range:360, xp:800,  cred:800,   honra:4, raio:17, cor:"#6fc8e0", sprite:"sonda", drop:{ titanio:[2,4], plasma:[0,1] } },
   corsario: { nome:"Corsário",        hp:900,  shield:420,  dmg:19, speed:2.1, range:400, xp:200,  cred:4200,  raio:18, cor:"#ffb050", drop:{ titanio:[2,5], plasma:[1,3] } },
   predador: { nome:"Predador",        hp:2400, shield:1200, dmg:34, speed:2.3, range:430, xp:620,  cred:13500, raio:22, cor:"#ff6b6b", drop:{ plasma:[2,5], cristal:[0,1] } },
   ceifador: { nome:"Ceifador",        hp:6000, shield:3200, dmg:58, speed:2.5, range:470, xp:1900, cred:42000, raio:27, cor:"#c66bff", drop:{ plasma:[3,7], cristal:[1,3] } },
@@ -537,8 +538,8 @@ const ENEMIES = {
 };
 
 const SECTORS = [
-  { nome:"Órbita Baixa",       nivel:1,  cor:"#0d1b33", pvp:0,    spawn:{ drone:12, sonda:4 } },
-  { nome:"Cinturão de Ferro",  nivel:3,  cor:"#221a2e", pvp:0,    spawn:{ sonda:10, corsario:5 } },
+  { nome:"Órbita Baixa",       nivel:1,  cor:"#0d1b33", pvp:0,    spawn:{ drone:35 } },
+  { nome:"Cinturão de Ferro",  nivel:3,  cor:"#221a2e", pvp:0,    spawn:{ sonda:15, drone:15 } },
   { nome:"Nebulosa Escarlate", nivel:6,  cor:"#2b1420", pvp:2,    spawn:{ corsario:10, predador:4 } },
   { nome:"Fenda de Kryon",     nivel:10, cor:"#141f2e", pvp:3,    spawn:{ predador:9, ceifador:3 } },
   { nome:"Núcleo Sombrio",     nivel:15, cor:"#1c0f18", pvp:4,    spawn:{ ceifador:8, devorador:1 } },
@@ -1963,7 +1964,9 @@ function atualizar(dt) {
       // na zona segura só pode revidar quem você atacou nos últimos segundos
     const cego = T < (en.cego || 0);          // atordoado pelo pulso EMP
     const podeAtacar = (!seguro || T < en.permitido) && !cego && !invulneravel();
-    if (!invisivel() && podeAtacar && dp < (ed.piloto ? 640 : 520)) en.agro = true;
+    /* Bicho passivo nunca puxa briga: ele só fica agressivo quando leva um
+       tiro, e isso quem liga é o aplicarDano. */
+    if (!ed.passivo && !invisivel() && podeAtacar && dp < (ed.piloto ? 640 : 520)) en.agro = true;
     if (dp > 1700 || invisivel() || !podeAtacar) en.agro = false;
 
     if (T - en.ultimoDano > 6000) {
@@ -1986,6 +1989,20 @@ function atualizar(dt) {
     }
     // em combate o inimigo fica virado para você
     if (en.agro) en.ang = anguloSuave(en.ang, Math.atan2(p.y - en.y, p.x - en.x), 0.14);
+
+    /* Os mesmos enfeites da sua nave, agora para eles: a inclinação na curva
+       lida da velocidade de giro, e a esteira de pontinhos atrás enquanto
+       estão andando. Guardado no próprio inimigo, não vai para o save. */
+    const giro = ((en.ang - (en.angAnt == null ? en.ang : en.angAnt) + Math.PI*3) % (Math.PI*2)) - Math.PI;
+    en.angAnt = en.ang;
+    en.inc = (en.inc || 0) +
+             (clamp(giro * GANHO_INCLINACAO, -1, 1) - (en.inc || 0)) * Math.min(1, 0.15 * dt/16);
+    /* Andando é ter saído do lugar de verdade, não ter intenção de sair.
+       É isso que liga motor, halo e esteira — parado, nada disso aparece. */
+    en.andando = dist(en.x, en.y, en.xAnt == null ? en.x : en.xAnt,
+                                  en.yAnt == null ? en.y : en.yAnt) > 0.3;
+    en.xAnt = en.x; en.yAnt = en.y;
+    if (en.andando && en.d.sprite) alimentarRastroInimigo(en, T);
     // inimigos circulam livremente pela zona segura — o que a zona bloqueia
     // é o ataque deles, não a passagem
     if (en.agro && podeAtacar && dp < ed.range && T - en.ultimoTiro > 950) {
@@ -2690,9 +2707,17 @@ function matarInimigo(en) {
       logar(DRONE_TIPOS[d.tipo].nome + " chegou ao nível " + agora + ".");
     }
   }
-  if (ed.honra) { ganharHonra(ed.honra); G.stats.pilotos++; progredirMissao("piloto"); }
+  /* Honra é uma coisa, contagem de abate é outra: monstro que dá honra (como
+     o Drone Errante) continua contando como monstro, não como piloto. */
+  if (ed.honra) ganharHonra(ed.honra);
+  if (ed.piloto) { G.stats.pilotos++; progredirMissao("piloto"); }
   else { G.stats.abates++; progredirMissao("matar", en.tipo); }
   logar("Abateu " + ed.nome + ".");
+
+  /* Morreu um, nasce outro na hora, num ponto qualquer do mapa longe da base.
+     Só vale para os bichos normais do setor: elite de invasão não repõe, e
+     piloto tem a conta dele. */
+  if (!ed.elite && !ed.piloto && sectorData().spawn[en.tipo]) spawnAlien(en.tipo);
 
   // cai uma única carga por abate, escolhida entre os recursos possíveis
   const opcoes = Object.entries(ed.drop || {})
@@ -3243,26 +3268,32 @@ function desenharNaveSprite(s, x, y, ang, t) {
   ctx.restore();
 }
 
-/* Jato saindo por trás, crescendo com a velocidade. */
-function chamaDoMotor(w, h, t) {
-  const p = G.player;
-  const v = p.movendo ? clamp(speedTotal() / 4, 0.25, 1) : 0;
-  if (v <= 0) return;
-  const base = -w * 0.46;                      // saída dos bicos, vista de cima
-  const comp = w * (0.20 + 0.34 * v) * (0.85 + Math.sin(t/45) * 0.15);
+/* Um bico de chama, desenhado no referencial da nave (bico para +x). `v` vai
+   de 0 a 1 e é o quanto o motor está acelerado; `dy` desloca o bico para o
+   lado, que é como a nave do jogador ganha os dois. */
+function bicoDeChama(w, h, v, dy, t, semente) {
+  const base = -w * 0.46;                      // saída do bico, vista de cima
+  const comp = w * (0.20 + 0.34 * v) * (0.85 + Math.sin(t/45 + semente) * 0.15);
   const alt  = h * 0.20;
   const g = ctx.createLinearGradient(base, 0, base - comp, 0);
   g.addColorStop(0,   "rgba(255,236,190,.95)");
   g.addColorStop(0.35,"rgba(255,150,60,.65)");
   g.addColorStop(1,   "rgba(255,90,40,0)");
   ctx.fillStyle = g;
-  for (const dy of [-h*0.16, h*0.16]) {
-    ctx.beginPath();
-    ctx.moveTo(base, dy - alt/2);
-    ctx.lineTo(base - comp, dy);
-    ctx.lineTo(base, dy + alt/2);
-    ctx.closePath(); ctx.fill();
-  }
+  ctx.beginPath();
+  ctx.moveTo(base, dy - alt/2);
+  ctx.lineTo(base - comp, dy);
+  ctx.lineTo(base, dy + alt/2);
+  ctx.closePath(); ctx.fill();
+}
+
+/* Jato saindo por trás, crescendo com a velocidade. A sua nave tem dois. */
+function chamaDoMotor(w, h, t) {
+  const p = G.player;
+  const v = p.movendo ? clamp(speedTotal() / 4, 0.25, 1) : 0;
+  if (v <= 0) return;
+  bicoDeChama(w, h, v, -h*0.16, t, 0);
+  bicoDeChama(w, h, v,  h*0.16, t, 0);
 }
 
 function desenharNave(x,y,ang,cor,tam) {
@@ -3328,11 +3359,30 @@ const spritePet = new Image();      spritePet.src      = "pet.png";
 const spriteDrone = new Image();    spriteDrone.src    = "drone-inovat.png";
 const spriteHercules = new Image(); spriteHercules.src = "drone-hercules.png";
 
+/* Figuras dos monstros. A chave é o campo `sprite` lá na tabela ENEMIES;
+   quem não tem figura continua sendo desenhado como polígono. `tam` é a
+   largura em cima do raio do bicho, e `motor` é a cor do facho que sai da
+   traseira — os dois modelos têm um motor só, bem no meio de trás. */
+const SPRITE_INIMIGO = {
+  errante: { arq:"inimigo-errante.png", larg:122, alt: 98, tam:4.2 },
+  sonda:   { arq:"inimigo-sonda.png",   larg: 76, alt:122, tam:2.9 },
+};
+for (const id in SPRITE_INIMIGO) {
+  const s = SPRITE_INIMIGO[id];
+  s.img = new Image(); s.img.src = s.arq;
+}
+
 /* Quanto ela deita na curva: a inclinação persegue a velocidade de giro e
    volta ao zero na reta. Guardado fora do save, é só enfeite. */
 let inclinacaoTita = 0;
+/* Ganho da inclinação: quanto de giro por quadro já vale a deitada máxima.
+   Estava em 26, o que era alto demais — qualquer curva de mais de 15° já
+   estourava no talo, então a nave saltava direto para a deitada máxima e
+   ficava lá, em vez de rolar para dentro e para fora da curva. Com 9 uma
+   curva de 45° usa 8 dos 33 quadros da tira sem nunca encostar no limite. */
+const GANHO_INCLINACAO = 9;
 function atualizarInclinacao(giro, dt) {
-  const alvo = clamp(giro * 26, -1, 1);        // giro em rad/quadro → −1..1
+  const alvo = clamp(giro * GANHO_INCLINACAO, -1, 1);   // rad/quadro → −1..1
   inclinacaoTita += (alvo - inclinacaoTita) * Math.min(1, 0.15 * dt / 16);
 }
 
@@ -3368,6 +3418,56 @@ function desenharRastro() {
     ctx.beginPath(); ctx.arc(r.x, r.y, 1.2 + k * 3.4, 0, 6.29); ctx.fill();
   }
   ctx.globalAlpha = 1;
+}
+
+/* Esteira dos inimigos: mesma ideia da sua, só que cada bicho carrega a dele
+   num campo próprio. Rabinho curto, some em meio segundo, e só quem tem
+   figura 3D ganha — os polígonos antigos ficam como estavam. */
+const RASTRO_INIMIGO = 26, RASTRO_INIMIGO_VIDA = 520;   // mesmos números da sua
+function alimentarRastroInimigo(en, T) {
+  if (!en.esteira) en.esteira = [];
+  const tras = en.ang + Math.PI, d = en.d.raio;
+  en.esteira.push({ x: en.x + Math.cos(tras)*d, y: en.y + Math.sin(tras)*d, t: T });
+  while (en.esteira.length && T - en.esteira[0].t > RASTRO_INIMIGO_VIDA) en.esteira.shift();
+  if (en.esteira.length > RASTRO_INIMIGO)
+    en.esteira.splice(0, en.esteira.length - RASTRO_INIMIGO);
+}
+function desenharEsteiraInimigo(en) {
+  const e = en.esteira;
+  if (!e || !e.length) return;
+  ctx.globalCompositeOperation = "lighter";
+  for (const r of e) {
+    const k = 1 - (G.tempo - r.t) / RASTRO_INIMIGO_VIDA;
+    if (k <= 0) continue;
+    ctx.globalAlpha = k * 0.42;                 // idênticos aos da sua nave
+    ctx.fillStyle = k > 0.6 ? "#ffd7a0" : "#ff8a4d";
+    ctx.beginPath(); ctx.arc(r.x, r.y, 1.2 + k*3.4, 0, 6.29); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  ctx.globalCompositeOperation = "source-over";
+}
+
+/* Luz do inimigo: o mesmo que a luzDaNave faz na sua, com os mesmos valores.
+   A diferença é que aqui ela some de vez com o bicho parado — motor apagado
+   não acende nada. Andando, halo embaixo e um clarão atrás no rumo do motor. */
+function luzDoInimigo(en, t) {
+  if (!en.andando) return;
+  const r = en.d.raio * 2.6;
+  const gr = ctx.createRadialGradient(en.x, en.y, 0, en.x, en.y, r);
+  gr.addColorStop(0, "rgba(255,190,130,.16)");
+  gr.addColorStop(0.45, "rgba(255,120,70,.09)");
+  gr.addColorStop(1, "rgba(255,90,50,0)");
+  ctx.fillStyle = gr;
+  ctx.beginPath(); ctx.arc(en.x, en.y, r, 0, 6.29); ctx.fill();
+
+  const tras = en.ang + Math.PI;
+  const bx = en.x + Math.cos(tras)*r*0.42, by = en.y + Math.sin(tras)*r*0.42;
+  const pulso = 0.8 + Math.sin(t/70 + en.x)*0.2;
+  const g2 = ctx.createRadialGradient(bx, by, 0, bx, by, r*0.62*pulso);
+  g2.addColorStop(0, "rgba(255,220,170,.22)");
+  g2.addColorStop(1, "rgba(255,120,60,0)");
+  ctx.fillStyle = g2;
+  ctx.beginPath(); ctx.arc(bx, by, r*0.62*pulso, 0, 6.29); ctx.fill();
 }
 
 /* posições suavizadas dos drones, para eles "arrastarem" ao virar a nave */
@@ -3637,8 +3737,50 @@ function desenharDrone(x, y, ang, d) {
 
 function desenharInimigo(en, t) {
   const ed = en.d, r = ed.raio;
+  const fig = ed.sprite ? SPRITE_INIMIGO[ed.sprite] : null;
   if (ed.piloto) {
     desenharNave(en.x, en.y, en.ang, ed.cor, r);
+  } else if (fig && fig.img.complete && fig.img.naturalWidth > 0) {
+    /* Aqui o inimigo ganha o mesmo tratamento da sua nave: esteira atrás,
+       halo embaixo, chama no motor, inclinação na curva e o respiro parado.
+       A ordem importa — esteira e halo vão no mundo, antes de girar. */
+    const w = r * fig.tam, h = w * fig.alt / fig.larg;
+    const inc = en.inc || 0;
+    const respiro = en.andando ? 1 : 1 + Math.sin(t/620 + en.x) * 0.018;
+
+    desenharEsteiraInimigo(en);
+    luzDoInimigo(en, t);
+
+    ctx.save(); ctx.translate(en.x, en.y); ctx.rotate(en.ang);
+    ctx.scale(respiro, respiro);
+    /* Um motor só, no meio da traseira, com a mesma chama das suas naves.
+       Parado, motor apagado: não desenha nada. A semente tira o sincronismo
+       para o bando inteiro não pulsar junto. */
+    if (en.andando) bicoDeChama(w, h, clamp(ed.speed / 3, 0.25, 1), 0, t, en.x);
+    // curva fingida, igual às naves de figura única: achata e desloca
+    ctx.translate(0, -inc * h * 0.07);
+    ctx.scale(1, 1 - Math.abs(inc) * 0.22);
+
+    const põe = () => ctx.drawImage(fig.img, -w/2, -h/2, w, h);
+    põe();
+    const desde = G.tempo - (en.ultimoDano || -9999);   // clarão ao apanhar
+    if (desde < 260) {
+      ctx.globalAlpha = 0.5 * (1 - desde/260);
+      ctx.globalCompositeOperation = "lighter";
+      põe();
+      ctx.globalCompositeOperation = "source-over";
+      ctx.globalAlpha = 1;
+    }
+    ctx.restore();
+    if (en.agro) {                                // bravo: brasa vermelha em volta
+      ctx.globalCompositeOperation = "lighter";
+      const br = ctx.createRadialGradient(en.x, en.y, r*0.6, en.x, en.y, r*2.2);
+      br.addColorStop(0, "rgba(255,60,60,.20)");
+      br.addColorStop(1, "rgba(255,60,60,0)");
+      ctx.fillStyle = br;
+      ctx.beginPath(); ctx.arc(en.x, en.y, r*2.2, 0, 6.29); ctx.fill();
+      ctx.globalCompositeOperation = "source-over";
+    }
   } else {
     ctx.save(); ctx.translate(en.x,en.y); ctx.rotate(en.ang);
     ctx.beginPath();
@@ -3669,10 +3811,16 @@ function desenharInimigo(en, t) {
     ctx.fillStyle = "#4cc9ff"; ctx.fillRect(x0,y0,w*Math.max(0,en.sh/en.maxSh),3);
     ctx.fillStyle = "#ff5a6e"; ctx.fillRect(x0,y0+3,w*Math.max(0,en.hp/en.maxHp),3);
   }
-  if (ed.piloto) {
-    ctx.font = "10px system-ui"; ctx.textAlign = "center"; ctx.fillStyle = ed.cor;
-    ctx.fillText(ed.nome, en.x, en.y + r + 16);
-  }
+  /* Nome embaixo do bicho. Monstro sai em vermelho; piloto continua na cor
+     da facção dele, que é o que diz de que lado ele está. O contorno preto
+     é para o nome não sumir contra a nebulosa clara. */
+  const yNome = en.y + r + 30;
+  ctx.font = "600 13px system-ui"; ctx.textAlign = "center";
+  ctx.lineWidth = 3.5; ctx.strokeStyle = "rgba(0,0,0,.75)";
+  ctx.strokeText(ed.nome, en.x, yNome);
+  ctx.fillStyle = ed.piloto ? ed.cor : "#ff5a5a";
+  ctx.fillText(ed.nome, en.x, yNome);
+  ctx.lineWidth = 1;
 }
 
 /* A base: a figura da nave-mãe, flutuando de leve. Ela não gira, porque é um
@@ -4355,12 +4503,12 @@ function atualizarHUD() {
     dh.style.display = "block";
     dh.innerHTML = `<span style="color:#ff9a9a">REVIDE ATIVO</span> · ${revide.length} inimigo(s) ` +
                    `ainda podem te atacar por ${resta}s`;
-  } else if (naEstacao()) {
+  } else if (naBase()) {
     dh.style.display = "block";
     dh.innerHTML = `<span style="color:#8affd8">ZONA SEGURA</span> · use o <b>carrinho</b> no canto superior esquerdo para abrir a loja`;
   } else if (emPortal()) {
     dh.style.display = "block";
-    dh.innerHTML = `<span style="color:#8affd8">ZONA SEGURA</span> · o portal protege igual à base: ninguém pode te atacar aqui`;
+    dh.innerHTML = `<span style="color:#8affd8">ZONA SEGURA</span> · o portal protege igual à base, e dá para mexer no equipamento aqui também`;
   } else dh.style.display = "none";
 
   const cb = el("cfgBtn");
@@ -4378,7 +4526,7 @@ function atualizarHUD() {
   if (eb) {
     eb.classList.toggle("off", !perto);   // aberto sempre, mas só funciona na base
     eb.title = perto ? "Equipamentos — equipar, vender, reparar"
-                     : "Equipamentos — só dá para mexer atracado na estação";
+                     : "Equipamentos — só dá para mexer na área da nave-mãe ou de um portal";
   }
 
   const ev = el("eventPanel");
@@ -4471,7 +4619,12 @@ function abrirModal(html, largo) {
   el("modal").classList.remove("hidden");
 }
 function fecharModal() { el("modal").classList.add("hidden"); }
-const naEstacao = () => dist(G.player.x, G.player.y, STATION.x, STATION.y) <= STATION.r + 170;
+/* Atracado. A área de mexer no equipamento é a mesma da zona neutra: a
+   figura inteira da nave-mãe (800px de raio) e também a área de qualquer
+   portal (456px). Se você está protegido, está atracado. */
+const naEstacao = () => emSeguranca();
+/* Só a base, para as mensagens que falam da estação em si. */
+const naBase = () => dist(G.player.x, G.player.y, STATION.x, STATION.y) < raioSeguro();
 
 /* A loja abre e vende de qualquer canto do mapa.
    O painel de equipamentos também abre em qualquer lugar, mas mexer na
@@ -4488,7 +4641,7 @@ function openEquip() {
 
 function exigeBase() {
   if (naEstacao()) return true;
-  toast("Só na estação: volte à base para mexer no equipamento");
+  toast("Volte para a área da nave-mãe ou de um portal para mexer no equipamento");
   return false;
 }
 
@@ -5099,8 +5252,8 @@ function renderEquip() {
         <div class="btnX" onclick="fecharModal()" title="Fechar">✕</div>
       </div>
     </div>` + barraAbas(ABAS_EQUIP, abaEquip, "abaE") +
-    (naEstacao() ? "" : `<div class="avisoBase">Você está fora da base — dá para olhar tudo,
-      mas encaixar, tirar, vender ou reparar só atracado na estação.</div>`);
+    (naEstacao() ? "" : `<div class="avisoBase">Você está fora de área — dá para olhar tudo,
+      mas encaixar, tirar, vender ou reparar só dentro da área da nave-mãe ou de um portal.</div>`);
 
   const corpo =
     abaEquip === "nave"   ? `<div class="duasCol"><div class="col esq">${colNave()}</div><div class="col dir">${colItens("nave")}</div></div>` :
@@ -5775,7 +5928,7 @@ function openHelp() {
     <div class="row"><div class="val">Configurações</div><div class="muted">a nave tem duas montagens independentes: monte uma de escudo e outra de velocidade, por exemplo. Troque a qualquer momento pela engrenagem no card do piloto ou pela tecla C — cada troca tem 3s de espera antes da próxima. O casco é o mesmo para as duas e não se recupera ao trocar; já o escudo é separado, cada configuração tem o seu e só regenera enquanto está ativa. Os drones também têm duas montagens e trocam junto com a nave. As duas configurações de uma mesma nave dividem as peças, mas o equipamento fica preso àquela nave: para montar em outra, é preciso desmontar ou comprar mais</div></div>
     <div class="row"><div class="val">Cor do laser</div><div class="muted">com todos os encaixes cheios de LF-3 o tiro fica azul; só de LF-4, branco acinzentado</div></div>
     <div class="row"><div class="val">Casco</div><div class="muted">a contagem de 3s corre a partir do último dano, mesmo voando; passados os 3s, basta parar a nave que o reparo começa na hora</div></div>
-    <div class="row"><div class="val">Zona segura</div><div class="muted">a base protege num raio de 800px, do tamanho da figura da nave-mãe, e cada portal num raio de 456px, com a mesma regra: ninguém te ataca e você repara de graça — os inimigos circulam por lá, só não podem atirar. Nenhum dos dois desenha anel no mapa, para não poluir a tela. Quem avisa é o <b>ZONA NEUTRA</b> em branco flutuando acima da sua nave; ele só acende quando ninguém mais pode te acertar, então some enquanto correr o prazo de revide de alguém que você atacou, e ao sair da zona ele vai apagando devagar em vez de piscar fora</div></div>
+    <div class="row"><div class="val">Zona segura</div><div class="muted">a base protege num raio de 800px, do tamanho da figura da nave-mãe, e cada portal num raio de 456px, com a mesma regra: ninguém te ataca, você repara de graça e mexe no equipamento — a área de atracar é a mesma da zona neutra, nos dois — os inimigos circulam por lá, só não podem atirar. Nenhum dos dois desenha anel no mapa, para não poluir a tela. Quem avisa é o <b>ZONA NEUTRA</b> em branco flutuando acima da sua nave; ele só acende quando ninguém mais pode te acertar, então some enquanto correr o prazo de revide de alguém que você atacou, e ao sair da zona ele vai apagando devagar em vez de piscar fora</div></div>
     <div class="row"><div class="val">Revide</div><div class="muted">dentro da zona só quem você atacou consegue te acertar, e por 5s depois do seu último tiro nele; qualquer outro inimigo tem o disparo barrado, mesmo os que já estavam no ar. O tiro do pet não estica esse prazo: o inimigo para nos 5s mesmo com ele ainda em cima. O pet, por sua vez, não tem prazo — uma vez engajado ele só larga quando o inimigo morre ou sai do alcance dele</div></div>
     <div class="row"><div class="val">Minimapa</div><div class="muted">clique (ou clique e arraste) no minimapa para viajar até aquele ponto</div></div>
     <div class="row"><div class="val">Morte</div><div class="muted">a tela escurece e mostra quem te abateu: 500 cr para ser resgatado até a base, chegando com casco e escudo zerados e recuperando na doca, ou 1.000 cr para reviver no lugar com metade do casco e metade do escudo da configuração ativa, intocável por 3s</div></div>
@@ -6068,9 +6221,20 @@ function dist(x1,y1,x2,y2) { return Math.hypot(x2-x1, y2-y1); }
 function clamp(v,a,b) { return Math.max(a, Math.min(b, v)); }
 function rnd(a,b) { return a + Math.random()*(b-a); }
 function fmt(n) { return Math.round(n).toLocaleString("pt-BR"); }
+/* Vira `a` na direção de `alvo` pelo caminho mais curto.
+   A conta antiga era `((alvo - a + 3π) % 2π) - π`. O problema: `a` ia se
+   acumulando a cada quadro e nunca era reduzido, então girando sempre para
+   o mesmo lado ele passava de 4π e `alvo - a + 3π` virava negativo. O resto
+   de divisão do JS guarda o sinal do dividendo, e aí a diferença saía com
+   2π de erro — a nave se jogava para o lado errado. Só acontecia no sentido
+   horário, porque é o sentido em que `a` cresce. O atan2 acerta em qualquer
+   magnitude, e reduzir o resultado mantém o ângulo curto para sempre. */
 function anguloSuave(a, alvo, k) {
-  const d = ((alvo - a + Math.PI*3) % (Math.PI*2)) - Math.PI;
-  return a + d*k;
+  const d = Math.atan2(Math.sin(alvo - a), Math.cos(alvo - a));
+  let r = a + d*k;
+  if (r >  Math.PI) r -= Math.PI*2;
+  else if (r < -Math.PI) r += Math.PI*2;
+  return r;
 }
 function toast(msg) {
   const d = document.createElement("div");
