@@ -323,6 +323,98 @@
     #botRight { bottom: calc(104px + env(safe-area-inset-bottom)); }
     .ab { width: 40px; height: 40px; }
   }
+
+  /* ===================== MODO CELULAR =====================
+     Tudo aqui depende da classe .modoCel, que o JS so poe no <body>
+     em aparelho de toque com tela pequena. No computador nada muda.
+     Para testar no PC, rode modoCelular(true) no console. */
+
+  #celJoy, #celFogo, #celAlvo, #celMenu, #celInfo, #celGirar { display: none; }
+
+  body.modoCel #hint, body.modoCel #logPanel, body.modoCel #gainPanel { display: none !important; }
+
+  /* a HUD grande fica guardada; o botao do canto abre e fecha */
+  body.modoCel:not(.hudAberta) #topLeft,
+  body.modoCel:not(.hudAberta) #topRight,
+  body.modoCel:not(.hudAberta) #petCard,
+  body.modoCel:not(.hudAberta) #botRight { display: none !important; }
+
+  body.modoCel #topLeft  { top: 54px; left: 8px; }
+  body.modoCel #topRight { top: 54px; right: 56px; }
+  body.modoCel #petCard  { top: 186px; left: 8px; }
+  body.modoCel #botRight { top: 152px; right: 8px; bottom: auto;
+                           flex-direction: column; max-width: 132px; align-items: stretch; }
+
+  /* botao que abre a HUD e o resumo permanente de creditos e carga */
+  body.modoCel #celMenu { display: flex; position: absolute; z-index: 12;
+      top: calc(8px + env(safe-area-inset-top)); right: calc(8px + env(safe-area-inset-right));
+      width: 40px; height: 40px; border-radius: 11px; align-items: center; justify-content: center;
+      font-size: 17px; color: #cfe3ff; background: rgba(8,16,32,.85);
+      border: 1px solid rgba(120,180,240,.45); backdrop-filter: blur(6px); }
+  body.modoCel.hudAberta #celMenu { color: #ffd166; border-color: rgba(255,209,102,.6);
+      background: rgba(60,44,12,.85); }
+  body.modoCel #celInfo { display: flex; gap: 9px; align-items: center; z-index: 12;
+      top: calc(8px + env(safe-area-inset-top)); right: calc(56px + env(safe-area-inset-right));
+      padding: 6px 10px; font-size: 12px; white-space: nowrap; }
+  body.modoCel.hudAberta #celInfo { display: none; }
+
+  body.modoCel #sectorName { top: calc(8px + env(safe-area-inset-top)); }
+  body.modoCel #targetPanel { top: 52px; width: 190px; }
+  body.modoCel #eventPanel { top: 108px; }
+  body.modoCel #toast { top: 92px; }
+
+  /* --- joystick, no polegar esquerdo --- */
+  body.modoCel #celJoy { display: block; position: absolute; z-index: 14;
+      left: calc(16px + env(safe-area-inset-left)); bottom: calc(16px + env(safe-area-inset-bottom));
+      width: 124px; height: 124px; border-radius: 50%; touch-action: none;
+      background: radial-gradient(circle, rgba(20,40,72,.5) 0%, rgba(8,16,32,.72) 70%);
+      border: 1px solid rgba(120,180,240,.4); }
+  body.modoCel #celJoy.on { border-color: rgba(126,200,255,.85);
+      box-shadow: 0 0 22px rgba(90,170,255,.35); }
+  #celKnob { position: absolute; left: 50%; top: 50%; width: 52px; height: 52px;
+      margin: 0; border-radius: 50%; display: block; pointer-events: none;
+      transform: translate(-50%,-50%); transition: transform .06s linear;
+      background: radial-gradient(circle at 35% 32%, #9fd8ff, #2f6fbf 70%);
+      border: 1px solid rgba(190,230,255,.75); box-shadow: 0 3px 12px rgba(0,0,0,.5); }
+
+  /* --- tiro e troca de alvo, no polegar direito --- */
+  body.modoCel #celFogo { display: flex; position: absolute; z-index: 14;
+      right: calc(16px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom));
+      width: 92px; height: 92px; border-radius: 50%; touch-action: none;
+      align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
+      letter-spacing: .1em; color: #ffcf9a; text-shadow: 0 1px 3px rgba(0,0,0,.6);
+      background: radial-gradient(circle at 38% 32%, rgba(255,150,80,.42), rgba(120,30,20,.6) 72%);
+      border: 2px solid rgba(255,150,90,.6); }
+  body.modoCel #celFogo.on { color: #fff3e0; border-color: #ffb06b;
+      background: radial-gradient(circle at 38% 32%, rgba(255,190,110,.75), rgba(180,50,20,.8) 72%);
+      box-shadow: 0 0 26px rgba(255,140,60,.6); }
+  body.modoCel #celAlvo { display: flex; position: absolute; z-index: 14;
+      right: calc(120px + env(safe-area-inset-right)); bottom: calc(34px + env(safe-area-inset-bottom));
+      width: 60px; height: 60px; border-radius: 50%; touch-action: none;
+      align-items: center; justify-content: center; font-size: 24px; line-height: 1; color: #8affd8;
+      background: rgba(8,26,32,.8); border: 1px solid rgba(120,255,200,.5); }
+
+  /* barra de acoes entre os dois polegares, so com os espacos usados */
+  body.modoCel #abilityBar { left: calc(154px + env(safe-area-inset-left));
+      right: calc(190px + env(safe-area-inset-right));
+      bottom: calc(14px + env(safe-area-inset-bottom));
+      transform: none; justify-content: flex-start; gap: 6px; padding: 6px;
+      overflow-x: auto; overflow-y: hidden; }
+  body.modoCel .abRows { flex-direction: row; }
+  body.modoCel .ab.vazio { display: none; }
+  body.modoCel .abKey { display: none; }
+
+  /* aviso de virar o aparelho: o jogo so roda deitado */
+  body.modoCel #celGirar { position: absolute; inset: 0; z-index: 60; background: #04060f;
+      align-items: center; justify-content: center; text-align: center; padding: 28px; }
+  #celGirar b { display: block; font-size: 17px; color: #8fd3ff; margin-bottom: 8px;
+      letter-spacing: .06em; }
+  #celGirar p { font-size: 13px; color: #7b9ac0; line-height: 1.6; max-width: 320px; }
+  #celGirar .seta { font-size: 44px; color: #4d7ba8; margin-bottom: 14px; display: block;
+      animation: gira 1.8s ease-in-out infinite; }
+  @keyframes gira { 0%,100% { transform: rotate(0deg); } 50% { transform: rotate(-90deg); } }
+  @media (orientation: landscape) { body.modoCel #celGirar { display: none !important; } }
+  @media (orientation: portrait)  { body.modoCel #celGirar { display: flex; } }
 </style>
 
 <div id="wrap">
@@ -6357,4 +6449,126 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
     return this;
   };
 }
+
+/* ===================== MODO CELULAR =====================
+   Joystick no polegar esquerdo, tiro no direito, HUD recolhivel.
+   Tudo aqui e acrescimo: nenhuma funcao existente foi reescrita, so
+   embrulhada. No computador o modo nem liga. */
+(function () {
+  const CEL = { ativo: false, raio: 52,
+                joy: { id: null, ativo: false, cx: 0, cy: 0, vx: 0, vy: 0, mag: 0 } };
+
+  function ehCelular() {
+    const grosso  = window.matchMedia("(pointer: coarse)").matches;
+    const pequeno = Math.min(screen.width, screen.height) <= 950;
+    return grosso && pequeno && (navigator.maxTouchPoints || 0) > 0;
+  }
+
+  function montar() {
+    const wrap = el("wrap");
+    if (!wrap || el("celJoy")) return;
+    wrap.insertAdjacentHTML("beforeend",
+      '<div id="celJoy"><i id="celKnob"></i></div>' +
+      '<div id="celAlvo" title="Proximo alvo">&#8982;</div>' +
+      '<div id="celFogo">FOGO</div>' +
+      '<div id="celMenu">&#9636;</div>' +
+      '<div class="panel" id="celInfo">' +
+        '<span class="credits" id="celCred">0</span>' +
+        '<span class="muted" id="celCarga">0 / 0</span></div>' +
+      '<div id="celGirar"><div>' +
+        '<span class="seta">&#9109;</span>' +
+        '<b>Vire o aparelho de lado</b>' +
+        '<p>Astra Conflux foi feito para jogar deitado: assim cabe muito mais mapa na tela ' +
+        'e os controles ficam nos dois polegares.</p></div></div>');
+
+    const joy = el("celJoy"), knob = el("celKnob");
+
+    function mirar(e) {
+      const dx = e.clientX - CEL.joy.cx, dy = e.clientY - CEL.joy.cy;
+      const d = Math.hypot(dx, dy) || 1;
+      const m = Math.min(1, d / CEL.raio);
+      CEL.joy.vx = dx / d; CEL.joy.vy = dy / d; CEL.joy.mag = m;
+      knob.style.transform = "translate(calc(-50% + " + (CEL.joy.vx * m * CEL.raio).toFixed(1) +
+                             "px), calc(-50% + " + (CEL.joy.vy * m * CEL.raio).toFixed(1) + "px))";
+    }
+    joy.addEventListener("pointerdown", e => {
+      e.preventDefault();
+      const r = joy.getBoundingClientRect();
+      CEL.joy.cx = r.left + r.width / 2;
+      CEL.joy.cy = r.top + r.height / 2;
+      CEL.joy.id = e.pointerId; CEL.joy.ativo = true;
+      joy.classList.add("on");
+      try { joy.setPointerCapture(e.pointerId); } catch (err) {}
+      mirar(e);
+    });
+    joy.addEventListener("pointermove", e => {
+      if (CEL.joy.id === e.pointerId) { e.preventDefault(); mirar(e); }
+    });
+    function soltar(e) {
+      if (CEL.joy.id !== e.pointerId) return;
+      CEL.joy.ativo = false; CEL.joy.id = null; CEL.joy.mag = 0;
+      knob.style.transform = "translate(-50%,-50%)";
+      joy.classList.remove("on");
+      // soltar o joystick para a nave onde ela esta, senao ela derrapa
+      // ate o ponto projetado la na frente
+      if (running && !G.morto) { G.player.dx = G.player.x; G.player.dy = G.player.y; }
+    }
+    joy.addEventListener("pointerup", soltar);
+    joy.addEventListener("pointercancel", soltar);
+
+    el("celFogo").addEventListener("pointerdown", e => {
+      e.preventDefault(); if (running) alternarAtaque();
+    });
+    el("celAlvo").addEventListener("pointerdown", e => {
+      e.preventDefault(); if (running) proximoAlvo();
+    });
+    el("celMenu").addEventListener("pointerdown", e => {
+      e.preventDefault(); document.body.classList.toggle("hudAberta");
+    });
+  }
+
+  /* o joystick so empurra o destino da nave: o motor de movimento
+     continua sendo o mesmo do computador */
+  const passoOriginal = window.atualizar;
+  window.atualizar = function (dt) {
+    if (CEL.ativo && CEL.joy.ativo && CEL.joy.mag > 0.12 && running && !G.morto) {
+      const p = G.player, alc = 130 + CEL.joy.mag * 520;
+      p.dx = clamp(p.x + CEL.joy.vx * alc, -MARGEM_FORA, WORLD.w + MARGEM_FORA);
+      p.dy = clamp(p.y + CEL.joy.vy * alc, -MARGEM_FORA, WORLD.h + MARGEM_FORA);
+    }
+    return passoOriginal.apply(this, arguments);
+  };
+
+  const hudOriginal = window.atualizarHUD;
+  window.atualizarHUD = function () {
+    const r = hudOriginal.apply(this, arguments);
+    if (CEL.ativo) {
+      const c = el("celCred");  if (c) c.textContent = fmt(G.creditos);
+      const g = el("celCarga"); if (g) g.textContent = cargaUsada() + " / " + cargoMax();
+      const f = el("celFogo");  if (f) f.classList.toggle("on", !!(G.player && G.player.atacando));
+    }
+    return r;
+  };
+
+  /* tela cheia tambem tenta travar o aparelho deitado */
+  const telaOriginal = window.toggleFullscreen;
+  window.toggleFullscreen = function () {
+    const r = telaOriginal.apply(this, arguments);
+    if (CEL.ativo && screen.orientation && screen.orientation.lock)
+      screen.orientation.lock("landscape").catch(() => {});
+    return r;
+  };
+
+  /* liga na mao, para testar no computador: modoCelular(true) */
+  window.modoCelular = function (ligar) {
+    CEL.ativo = ligar !== false;
+    document.body.classList.toggle("modoCel", CEL.ativo);
+    if (CEL.ativo) montar();
+    return CEL.ativo ? "modo celular ligado" : "modo celular desligado";
+  };
+
+  function iniciar() { if (ehCelular()) window.modoCelular(true); }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
+  else iniciar();
+})();
 </script>
