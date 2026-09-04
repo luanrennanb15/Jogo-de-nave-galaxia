@@ -249,12 +249,14 @@
   .lojaTitulo { font-size: 15px; letter-spacing: .18em; color: #8fd3ff; font-weight: 700;
                 padding: 2px 2px 10px; margin-bottom: 6px;
                 border-bottom: 1px solid rgba(255,255,255,.12); }
-  .fichaLoja { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+  /* nowrap: os detalhes ficam à direita da figura em qualquer largura, como
+     no computador; quem encolhe é o texto, não o layout */
+  .fichaLoja { display: flex; gap: 16px; align-items: flex-start; flex-wrap: nowrap; }
   .fichaFig { flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
-              min-width: 230px; min-height: 176px; padding: 10px; border-radius: 10px;
+              width: 180px; height: 180px; padding: 10px; border-radius: 10px;
               background: radial-gradient(circle at 50% 45%, rgba(60,140,220,.18), rgba(8,16,32,.35) 70%);
               border: 1px solid rgba(120,180,240,.22); }
-  .fichaTxt { flex: 1; min-width: 220px; }
+  .fichaTxt { flex: 1; min-width: 0; }
   .figLoja { display: block; image-rendering: auto; }
   /* Turntable: 24 quadros lado a lado numa tira só. O 104,3478% não é chute —
      é 100×24/23, o deslocamento que vale exatamente 24 larguras de quadro,
@@ -381,7 +383,8 @@
     .equipLay { gap: 8px; }
     .equipCats { flex: 0 0 106px; padding-right: 6px; }
     .equipCats button { padding: 7px 8px; font-size: 11px; }
-    .fichaFig { min-width: 176px; min-height: 140px; }
+    .fichaFig { width: 146px; height: 146px; padding: 8px; }
+    .fichaLoja { gap: 10px; }
     .cartaoLoja { width: 92px; }
     .cartaoFig { height: 38px; }
     .slot b { font-size: 8px; line-height: 1.05; }
@@ -1117,7 +1120,8 @@ function novoJogo(nome, factionId) {
     nome, faccao: factionId, mod: f.mod, cor: f.cor,
     nivel: 1, xp: 0, honra: 0, creditos: teste ? CRED_TESTE : CRED_INICIAL,
     nave: "faisca", naves: ["faisca"], slotsNave: 1, morto: null,
-    inv: { laser:{ LF1:2 }, escudo:{ SG1:2 }, motor:{ MT1:1 }, modulo:{} },
+    inv: { laser:{ LF1:2 }, escudo:{ SG1:2 }, motor:{ MT1:1 },
+           modulo:{}, lancador:{}, petmod:{} },
     /* Cada nave guarda as SUAS duas configurações. O equipamento fica preso
        à nave: para usar em outra, é preciso tirar de lá ou comprar mais.
        Dentro da mesma nave, as duas configurações compartilham as peças. */
@@ -1171,6 +1175,11 @@ function normalizarConfig(cfg, naveId) {
 }
 
 function normalizarEquip() {
+  /* garante uma gaveta no depósito para cada tipo de item que existe no jogo.
+     Sem isto, um save antigo sem 'lancador' quebrava o painel inteiro. */
+  if (!G.inv || typeof G.inv !== "object") G.inv = {};
+  for (const t in ITEMS) if (!G.inv[t] || typeof G.inv[t] !== "object") G.inv[t] = {};
+
   if (!G.naveCfg || typeof G.naveCfg !== "object") G.naveCfg = {};
   // save antigo: as configurações soltas pertenciam à nave em uso
   if (Array.isArray(G.configs) && !G.naveCfg[G.nave]) G.naveCfg[G.nave] = G.configs;
@@ -1369,7 +1378,9 @@ function trocarConfig(i) {
   if (!el("modal").classList.contains("hidden")) renderBase();
 }
 const primeiroVazio = cat => G.equip[cat].indexOf(null);
-const possui     = (t,id) => G.inv[t][id] || 0;
+/* gaveta faltando no save não pode derrubar o painel: contas criadas antes
+   desta correção não tinham 'lancador' nem 'petmod' no depósito */
+const possui     = (t,id) => (G.inv && G.inv[t] && G.inv[t][id]) || 0;
 /* "em uso" conta o que está na nave e o que está montado nos drones */
 const contarNoCfg = (cfg, id) => cfg
   ? CATS.reduce((a,cat) => a + ((cfg[cat] || []).filter(x => x === id).length), 0) : 0;
@@ -4921,7 +4932,11 @@ function figuraLoja(cat, id, alt, animar) {
   const chave = (cat === "nave" || cat === "drone") ? id : cat === "pet" ? "pet" : null;
   const g = chave && GIRO[chave];
   if (animar && g) {
-    const e = alt / g.alt, w = Math.round(GIRO_LARG * e), h = Math.round(alt);
+    /* `alt` aqui é o lado do quadrado, não a altura: a figura encolhe até
+       caber nele pelos dois lados. Escalando só pela altura, uma nave de
+       quadro baixo e largo como a Titã (176x64) virava 412px de largura. */
+    const e = Math.min(alt / GIRO_LARG, alt / g.alt);
+    const w = Math.round(GIRO_LARG * e), h = Math.round(g.alt * e);
     return `<div class="figLoja giro3d" style="width:${w}px;height:${h}px;
       background-image:url('${g.arq}');background-size:${w*GIRO_Q}px ${h}px"></div>`;
   }
@@ -5117,7 +5132,7 @@ function detalheLoja() {
   }
 
   return `<div class="fichaLoja">
-      <div class="fichaFig">${figuraLoja(cat, id, 150, true)}</div>
+      <div class="fichaFig">${figuraLoja(cat, id, window.CEL_ATIVO ? 126 : 158, true)}</div>
       <div class="fichaTxt">
         <div class="val" style="font-size:16px;${cor ? `color:${cor}` : ""}">${nome}</div>
         <div class="muted" style="margin:6px 0 12px;line-height:1.6">${desc}</div>
