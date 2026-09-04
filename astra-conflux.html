@@ -10,6 +10,9 @@
 <meta name="apple-mobile-web-app-title" content="Astra Conflux">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#04060f">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <link rel="apple-touch-icon" href="icone-180.png">
 <link rel="icon" href="icone-180.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -583,6 +586,7 @@
     <div class="box">
       <h1>ASTRA CONFLUX</h1>
       <p class="sub">Três facções disputam os setores externos. Escolha um lado, monte sua nave, farme, suba de patente.</p>
+      <div class="muted" id="versaoJogo" style="margin:-8px 0 14px;font-size:11px"></div>
 
       <div id="telaEspacos">
         <div class="lbl">Espaços de save — cada um é uma conta separada</div>
@@ -6683,17 +6687,41 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
     const box = document.querySelector("#startScreen .box");
     if (!box) return;
     const txt = ehIOS()
-      ? 'No iPhone o Safari nao tem tela cheia. Para jogar sem a barra do navegador em cima: toque em <b>Compartilhar</b> e depois em <b>Adicionar a Tela de Inicio</b>. Abrindo pelo icone que aparecer, o jogo ocupa a tela inteira.'
+      ? 'No iPhone o Safari não tem tela cheia. Para jogar sem a barra do navegador em cima: toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>. Abrindo pelo ícone que aparecer, o jogo ocupa a tela inteira. <b>Não remova o ícone para atualizar</b> — removê-lo apaga os saves. Basta fechar e abrir o jogo.'
       : 'Para jogar sem a barra do navegador, use <b>Tela cheia</b> no menu do jogo, ou adicione a pagina a tela de inicio pelo menu do navegador.';
     box.insertAdjacentHTML("afterbegin", '<div class="avisoBase" id="celDicaPWA">' + txt + '</div>');
   }
 
+  /* No iPhone o jogo salvo na tela de início guardava a página antiga e só
+     atualizava se você removesse e recriasse o ícone — e remover o ícone
+     apaga o localStorage, ou seja, os saves. O service worker busca a versão
+     nova do servidor toda vez que o jogo abre, então basta fechar e abrir. */
+  if (location.protocol === "https:" && "serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js")
+        .then(reg => { reg.update().catch(() => {}); })
+        .catch(() => {});
+    });
+  }
+
+  /* carimbo de versão: document.lastModified vem do próprio arquivo, então
+     não há número para eu esquecer de subir */
+  function mostrarVersao() {
+    const v = el("versaoJogo");
+    if (!v) return;
+    let quando = document.lastModified || "";
+    v.textContent = quando ? "versão de " + quando : "";
+    if (comoApp()) v.textContent += " · rodando como app";
+  }
+
   function iniciar() {
+    mostrarVersao();
     if (!ehCelular()) return;
     window.modoCelular(true);
     dicaTelaCheia();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
   else iniciar();
+  window.mostrarVersaoJogo = mostrarVersao;
 })();
 </script>
