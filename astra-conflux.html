@@ -417,9 +417,10 @@ const REVIVER_LOCAL = 1000;
 const INVUL_REVIVE  = 3000;
 const JANELA_LOCAL  = 10000;   // tempo para escolher reviver no local
 
-/* Salto entre setores: o portal precisa carregar antes de arremessar a nave */
+/* Salto entre setores: o portal precisa carregar antes de arremessar a nave.
+   O alcance para acionar sai de RAIO_PORTAL, mais abaixo, que é uma fração
+   da zona segura do portal. */
 const TEMPO_SALTO   = 2500;
-const RAIO_PORTAL   = 90;
 
 /* Fora dos limites do setor a nave é corroída */
 const MARGEM_FORA   = 1400;    // até onde dá para se afastar
@@ -1332,6 +1333,9 @@ const raioSeguro = () => STATION.r + MARGEM_SEGURA;
 /* O portal também é zona segura, com as mesmas regras da base: lá dentro
    ninguém pode te atacar, tirando quem você mesmo provocou. */
 const RAIO_SEGURO_PORTAL = 380;   // o dobro do que era
+/* Dá para acionar o salto em 75% da zona segura: você não precisa encostar
+   no portal, basta estar na parte de dentro do anel. */
+const RAIO_PORTAL = RAIO_SEGURO_PORTAL * 0.75;
 const PORTAL_TAM = 210;
 const PORTAL_ALT = 198 / 178;     // proporção da figura
 
@@ -2112,11 +2116,12 @@ function atualizar(dt) {
     if (!alvo) G.saltoAlvo = null;
     else if (dist(p.x,p.y,alvo.x,alvo.y) < RAIO_PORTAL) { G.saltoAlvo = null; iniciarSalto(alvo); }
   }
+  /* Acionou o salto, ele acontece: sair de perto, correr ou levar tiro não
+     cancela mais nada. Só some se o portal em si deixar de existir. */
   if (G.salto) {
     const g = gates().find(x => x.to === G.salto.to);
-    if (!g || dist(p.x,p.y,g.x,g.y) > RAIO_PORTAL + 70) {
+    if (!g) {
       G.salto = null;
-      toast("Salto interrompido — você saiu do portal");
     } else if (T >= G.salto.fim) {
       const destino = G.salto.to;
       G.salto = null;
@@ -2864,15 +2869,16 @@ function iniciarSalto(g) {
   if (G.salto) return;
   const alvo = SECTORS[g.to];
   if (G.nivel < alvo.nivel) { toast("Precisa de nível " + alvo.nivel + " para entrar em " + alvo.nome); return; }
+  /* Depois de acionado o salto está garantido: a nave fica livre para andar,
+     atirar ou sair da zona, e mesmo assim vai. */
   G.salto = { to: g.to, fim: G.tempo + TEMPO_SALTO, inicio: G.tempo };
-  G.player.dx = G.player.x; G.player.dy = G.player.y;   // ancora a nave no portal
-  toast("Portal carregando — " + (TEMPO_SALTO/1000) + "s para " + alvo.nome);
+  toast("Carregando Salto");
   beep(220, 0.2);
 }
 
 /* tecla J ou clique no portal */
 function acionarPortal() {
-  if (G.salto) { G.salto = null; toast("Salto cancelado"); return; }
+  if (G.salto) return;                    // acionado é acionado: não cancela, e sem aviso
   if (G.portalPerto) { iniciarSalto(G.portalPerto); return; }
   const g = gates().sort((a,b) =>
     dist(G.player.x,G.player.y,a.x,a.y) - dist(G.player.x,G.player.y,b.x,b.y))[0];
@@ -2891,11 +2897,22 @@ function viajar(idx) {
     return;
   }
   const estado = { hp: G.player.hp, sh: G.player.sh, shCfg: G.player.shCfg };
-  const veioDaDireita = idx < G.setor;
+  const anterior = G.setor;
   G.setor = idx;
   iniciarSetor(estado);
-  G.player.x = G.player.dx = veioDaDireita ? WORLD.w - 800 : 800;
-  G.player.y = G.player.dy = 2000;
+
+  /* Você sai no meio do portal de volta, ou seja, naquele que leva ao setor
+     de onde veio — como se tivesse atravessado o túnel e aparecido do outro
+     lado. Já nasce dentro da zona segura dele. */
+  const saida = gates().find(g => g.to === anterior);
+  if (saida) { G.player.x = G.player.dx = saida.x; G.player.y = G.player.dy = saida.y; }
+  else {
+    G.player.x = G.player.dx = idx < anterior ? WORLD.w - 800 : 800;
+    G.player.y = G.player.dy = 2000;
+  }
+  if (G.pet) { G.pet.x = G.player.x - 90; G.pet.y = G.player.y; G.pet.pouso = null; }
+  dronePos = [];
+
   toast("Entrando em " + alvo.nome);
   logar("Viajou para " + alvo.nome + ".");
 }
@@ -3010,9 +3027,8 @@ function desenhar(t) {
   ctx.save();
   ctx.translate(-G.cam.x - tre.x, -G.cam.y - tre.y);
 
-  ctx.strokeStyle = "rgba(120,180,240,.05)"; ctx.lineWidth = 1;
-  for (let x = 0; x <= WORLD.w; x += 400) { ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,WORLD.h); ctx.stroke(); }
-  for (let y = 0; y <= WORLD.h; y += 400) { ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(WORLD.w,y); ctx.stroke(); }
+  /* A grade de quadrados de 400px saiu daqui: com a nebulosa ao fundo ela
+     só sujava a imagem. A borda do setor continua, que essa faz falta. */
   // borda do setor: vermelha e pulsando quando você passa dela
   const fora = foraDoMapa();
   ctx.strokeStyle = fora ? `rgba(255,70,70,${.5 + Math.abs(Math.sin(t/200))*.5})` : "rgba(120,200,255,.18)";
@@ -3617,8 +3633,9 @@ function desenharInimigo(en, t) {
   }
 }
 
-/* Anel tracejado que marca uma zona segura — o mesmo desenho serve para a
-   estação e para os portais. Acende de leve quando você está dentro. */
+/* Anel tracejado da zona segura. Hoje só a estação usa: nos portais ele foi
+   tirado porque o círculo grande poluía a tela. A proteção continua igual,
+   só não é mais desenhada. */
 function anelSeguro(x, y, raio, t, dentro) {
   ctx.save(); ctx.translate(x, y);
   ctx.globalAlpha = dentro ? .16 : .10; ctx.fillStyle = "#4cc9ff";
@@ -3669,9 +3686,7 @@ function desenharPortal(g, t) {
   const carregando = G.salto && G.salto.to === g.to;
   const k = carregando ? Math.min(1, (G.tempo - G.salto.inicio) / TEMPO_SALTO) : 0;
 
-  // anel de zona segura, igual ao da estação
-  anelSeguro(g.x, g.y, RAIO_SEGURO_PORTAL, t, dist(G.player.x,G.player.y,g.x,g.y) < RAIO_SEGURO_PORTAL);
-
+  // sem anel desenhado: a zona segura continua valendo, só não aparece
   if (spritePortal.complete && spritePortal.naturalWidth > 0) {
     const w = PORTAL_TAM, h = w * PORTAL_ALT;
     /* Balanço lento: ele flutua de leve e oscila um tiquinho, como se
@@ -3720,11 +3735,9 @@ function desenharPortal(g, t) {
     ctx.restore(); ctx.globalAlpha = 1; ctx.lineWidth = 1;
   }
 
-  // sem anel de carga e sem contagem: o salto acontece sem alarde
-  ctx.font = "600 12px system-ui"; ctx.textAlign = "center";
-  ctx.fillStyle = ok ? "#8affd8" : "#ff9a9a";
-  ctx.fillText(alvo.nome + (ok ? "" : " (nível " + alvo.nivel + ")"),
-               g.x, g.y + PORTAL_TAM*PORTAL_ALT*0.5 + 16);
+  /* Sem anel de carga, sem contagem e sem o nome do destino embaixo: o
+     portal fica limpo. Para onde ele leva (e se o nível dá) aparece no
+     botão Saltar, que surge logo acima dele quando você chega perto. */
 }
 
 function desenharInvasao(t) {
@@ -3768,15 +3781,13 @@ function desenharRadar() {
   ctx.strokeStyle = "rgba(127,224,255,.5)"; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.ellipse(x+STATION.x*sx, y+STATION.y*sy, raioSeguro()*sx, raioSeguro()*sy, 0, 0, 6.29); ctx.stroke();
   ctx.fillStyle = "#5fd0ff"; ctx.fillRect(x+STATION.x*sx-3, y+STATION.y*sy-3, 7,7);
-  // os portais também mostram o círculo de zona segura no minimapa
+  // portal: só um circulozinho branco pontilhado, sem marcador cheio
+  ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1;
+  ctx.setLineDash([2, 2]);
   for (const g of gates()) {
-    ctx.strokeStyle = "rgba(127,224,255,.4)";
-    ctx.beginPath();
-    ctx.ellipse(x+g.x*sx, y+g.y*sy, RAIO_SEGURO_PORTAL*sx, RAIO_SEGURO_PORTAL*sy, 0, 0, 6.29);
-    ctx.stroke();
+    ctx.beginPath(); ctx.arc(x + g.x*sx, y + g.y*sy, 4.5, 0, 6.29); ctx.stroke();
   }
-  ctx.fillStyle = "#8affd8";
-  for (const g of gates()) ctx.fillRect(x+g.x*sx-2, y+g.y*sy-2, 4,4);
+  ctx.setLineDash([]);
   ctx.fillStyle = "rgba(255,209,102,.85)";
   for (const c of G.caixas) ctx.fillRect(x+c.x*sx-1, y+c.y*sy-1, 3,3);
   if (G.invasao) { ctx.fillStyle = "#ff8a3d"; ctx.fillRect(x+G.invasao.x*sx-3, y+G.invasao.y*sy-3, 7,7); }
@@ -5713,7 +5724,7 @@ function openHelp() {
     <div class="row"><div class="val">Carrinho (LOJA)</div><div class="muted">só compra, e funciona de qualquer lugar do mapa: naves, canhões, escudos, motores, módulos, munição, foguetes, drones, melhorias e Skylab (tecla B)</div></div>
     <div class="row"><div class="val">Chave (EQUIP)</div><div class="muted">abre em qualquer lugar para consultar, mas encaixar, tirar, vender e reparar só atracado na estação (tecla N)</div></div>
     <div class="row"><div class="val">C</div><div class="muted">troca entre a configuração 1 e a 2, o mesmo que clicar na engrenagem</div></div>
-    <div class="row"><div class="val">Portal</div><div class="muted">chegando perto aparece o botão <b>Saltar</b> na tela; a tecla <b>J</b> leva a nave até o portal e aciona sozinha. A carga leva 2,5s e sair de perto cancela</div></div>
+    <div class="row"><div class="val">Portal</div><div class="muted">o botão <b>Saltar</b> aparece em cima do próprio portal quando você entra no alcance, que é 285px — 75% da zona segura dele, de 380px. A tecla <b>J</b> leva a nave até lá e aciona sozinha. Depois de acionado o salto está garantido: você pode andar, atirar ou sair da zona que ele acontece igual, 2,5s depois, e apertar J de novo não cancela. Você sai no centro do portal de volta do setor novo, já dentro da zona segura dele</div></div>
     <div class="row"><div class="val">Fora do setor</div><div class="muted">o mapa não tem parede: passando da borda aparece DANGER em vermelho e, depois de 3 segundos, o casco começa a ceder até você voltar</div></div>
     <div class="row"><div class="val">T / G / M / P / L</div><div class="muted">missões · clã · mapa · perfil · log</div></div>
     <div class="row"><div class="val">Contas</div><div class="muted">o jogo guarda três espaços de save independentes. A tela inicial lista os três com nome, nível, facção, créditos e tempo de voo; você entra no que quiser e o salvamento automático escreve só nele. Dentro do jogo, <b>Perfil</b> tem <b>Trocar de conta</b>, que salva e volta para a lista. Apagar um espaço não encosta nos outros, e o save antigo de antes desta versão virou o espaço 1 sozinho</div></div>
@@ -5731,7 +5742,7 @@ function openHelp() {
     <div class="row"><div class="val">Configurações</div><div class="muted">a nave tem duas montagens independentes: monte uma de escudo e outra de velocidade, por exemplo. Troque a qualquer momento pela engrenagem no card do piloto ou pela tecla C — cada troca tem 3s de espera antes da próxima. O casco é o mesmo para as duas e não se recupera ao trocar; já o escudo é separado, cada configuração tem o seu e só regenera enquanto está ativa. Os drones também têm duas montagens e trocam junto com a nave. As duas configurações de uma mesma nave dividem as peças, mas o equipamento fica preso àquela nave: para montar em outra, é preciso desmontar ou comprar mais</div></div>
     <div class="row"><div class="val">Cor do laser</div><div class="muted">com todos os encaixes cheios de LF-3 o tiro fica azul; só de LF-4, branco acinzentado</div></div>
     <div class="row"><div class="val">Casco</div><div class="muted">a contagem de 3s corre a partir do último dano, mesmo voando; passados os 3s, basta parar a nave que o reparo começa na hora</div></div>
-    <div class="row"><div class="val">Zona segura</div><div class="muted">dentro do anel ninguém te ataca e você repara de graça — os inimigos circulam por lá, só não podem atirar. Cada portal tem o próprio anel e vale a mesma regra: parado nele você está protegido igual à base</div></div>
+    <div class="row"><div class="val">Zona segura</div><div class="muted">dentro do anel ninguém te ataca e você repara de graça — os inimigos circulam por lá, só não podem atirar. Cada portal também protege num raio de 380px, com a mesma regra da base — só que sem anel desenhado, para não poluir a tela. O aviso de ZONA SEGURA no rodapé continua avisando quando você entra</div></div>
     <div class="row"><div class="val">Revide</div><div class="muted">dentro da zona só quem você atacou consegue te acertar, e por 5s depois do seu último tiro nele; qualquer outro inimigo tem o disparo barrado, mesmo os que já estavam no ar. O tiro do pet não estica esse prazo: o inimigo para nos 5s mesmo com ele ainda em cima. O pet, por sua vez, não tem prazo — uma vez engajado ele só larga quando o inimigo morre ou sai do alcance dele</div></div>
     <div class="row"><div class="val">Minimapa</div><div class="muted">clique (ou clique e arraste) no minimapa para viajar até aquele ponto</div></div>
     <div class="row"><div class="val">Morte</div><div class="muted">a tela escurece e mostra quem te abateu: 500 cr para ser resgatado até a base, chegando com casco e escudo zerados e recuperando na doca, ou 1.000 cr para reviver no lugar com metade do casco e metade do escudo da configuração ativa, intocável por 3s</div></div>
