@@ -1100,12 +1100,22 @@ const cv = document.getElementById("cv");
 const ctx = cv.getContext("2d");
 let G = null, running = false, stars = [], escolhaFaccao = "solaris";
 
+/* Quantas missões dá para carregar ao mesmo tempo. */
+const MISSOES_MAX = 5;
+
+/* Conta de teste: criar o piloto com este nome já começa rico, para
+   experimentar o jogo inteiro sem farmar. Não muda mais nada. */
+const NOME_TESTE = "kronnozs";
+const CRED_TESTE = 2000000;
+const CRED_INICIAL = 30000;
+
 function novoJogo(nome, factionId) {
+  const teste = String(nome || "").trim().toLowerCase() === NOME_TESTE;
   const f = FACTIONS.find(x => x.id === factionId);
   return {
     versao: 2,
     nome, faccao: factionId, mod: f.mod, cor: f.cor,
-    nivel: 1, xp: 0, honra: 0, creditos: 8000,
+    nivel: 1, xp: 0, honra: 0, creditos: teste ? CRED_TESTE : CRED_INICIAL,
     nave: "faisca", naves: ["faisca"], slotsNave: 1, morto: null,
     inv: { laser:{ LF1:2 }, escudo:{ SG1:2 }, motor:{ MT1:1 }, modulo:{} },
     /* Cada nave guarda as SUAS duas configurações. O equipamento fica preso
@@ -1117,9 +1127,9 @@ function novoJogo(nome, factionId) {
     configs: null,
     equip: { laser:[], gerador:[], modulo:[] },
     up: { laser:0, escudo:0, motor:0, coletor:0 },
-    municao: { lcb20:200, mcb30:0, ucb100:0, rsb300:0, drno25:0 }, ammoSel: "lcb10",
+    municao: { lcb20:2000, mcb30:0, ucb100:0, rsb300:0, drno25:0 }, ammoSel: "lcb10",
     calibre: "lcb10",                          // calibre que o pet acompanha
-    foguetes: { R310:12, PLT21:0, PLT30:0 }, foguetSel: "R310",
+    foguetes: { R310:2000, PLT21:0, PLT30:0 }, foguetSel: "R310",
     projeteis: { P1122:0, P2540:0, P3030:0 }, projetilSel: "P1122",
     drones: [],
     formacoes: [], formacaoSel: "normal", formacaoCd: 0,   // compradas, a que vale e a espera da troca
@@ -6040,18 +6050,18 @@ function openMissions() {
   const oferta = G.oferta.map(m => `<div class="row">
       <div><div class="val">${m.titulo}</div>
         <div class="muted">recompensa ${fmt(m.rec.cred)} cr, ${fmt(m.rec.xp)} xp${m.rec.honra ? ", " + fmt(m.rec.honra) + " honra" : ""}</div></div>
-      <button ${G.missoes.length < 3 ? "" : "disabled"} onclick="aceitarMissao(${m.id})">Aceitar</button>
+      <button ${G.missoes.length < MISSOES_MAX ? "" : "disabled"} onclick="aceitarMissao(${m.id})">Aceitar</button>
     </div>`).join("");
 
   abrirModal(`<h1 style="font-size:18px">QUADRO DE MISSÕES</h1>
-    <p class="sub">Até 3 missões ativas ao mesmo tempo. Entregue aqui mesmo, de qualquer lugar.</p>
-    <h2>Ativas (${G.missoes.length}/3)</h2>${ativas}
+    <p class="sub">Até ${MISSOES_MAX} missões ativas ao mesmo tempo. Entregue aqui mesmo, de qualquer lugar.</p>
+    <h2>Ativas (${G.missoes.length}/${MISSOES_MAX})</h2>${ativas}
     <h2>Disponíveis</h2>${oferta}
     <div class="foot"><button onclick="rolarOferta()">Trocar ofertas</button>
       <button onclick="fecharModal()">Fechar</button></div>`);
 }
 function aceitarMissao(id) {
-  if (G.missoes.length >= 3) return;
+  if (G.missoes.length >= MISSOES_MAX) return;
   const i = G.oferta.findIndex(m => m.id === id);
   if (i < 0) return;
   G.missoes.push(G.oferta.splice(i,1)[0]);
