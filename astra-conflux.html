@@ -363,12 +363,17 @@
     .box { padding: 14px; width: 96vw; }
     .box.wide { width: 100%; padding: 10px 12px; }
     .box h1 { font-size: 17px; }
-    .duasCol { flex-direction: column; gap: 10px; }
-    .col.dir { flex: 1 1 auto; border-left: none; padding-left: 0; padding-top: 10px;
-               border-top: 1px solid rgba(255,255,255,.09); }
+    /* Empilhado, a coluna da nave era espremida a quase nada e só aparecia
+       o depósito. Lado a lado, cada uma rola sozinha e as duas cabem. */
+    .duasCol { gap: 8px; }
+    .col.esq { flex: 1.1; padding-right: 4px; }
+    .col.dir { flex: 0 0 46%; padding-left: 8px; }
     .cards { grid-template-columns: 1fr; }
-    .slot { width: 54px; height: 54px; padding: 2px; gap: 1px; font-size: 8.5px; border-radius: 7px; }
-    .slotGrid { gap: 5px; margin: 4px 0 10px; }
+    .slot { width: 40px; height: 40px; padding: 1px; gap: 0; font-size: 7.5px; border-radius: 6px; }
+    /* sem o texto de apoio o quadrado fica só com o nome, que é o que importa
+       para reconhecer a peça; o detalhe continua no toque e segurar */
+    .slot span { display: none; }
+    .slotGrid { gap: 4px; margin: 3px 0 8px; }
     /* o botão de encher a seção ocupava a largura toda e virava uma barra */
     .secHeadV { gap: 4px; margin-top: 9px; }
     .secHeadV button { align-self: flex-start; padding: 5px 9px; font-size: 10.5px; }
@@ -379,8 +384,7 @@
     .fichaFig { min-width: 176px; min-height: 140px; }
     .cartaoLoja { width: 92px; }
     .cartaoFig { height: 38px; }
-    .slot b { font-size: 9.5px; }
-    .slot span { font-size: 8px; }
+    .slot b { font-size: 8px; line-height: 1.05; }
     button { padding: 8px 12px; }
     button.mini { padding: 6px 9px; font-size: 11px; }
     .btnX { width: 34px; height: 34px; }
@@ -4888,10 +4892,11 @@ const FIG_DRONE = { inovat:"drone-inovat.png", hercules:"drone-hercules.png",
 /* Tiras de giro: 24 quadros de 176px de largura, vista de frente, uma volta
    completa. Só a figura grande da ficha usa; as miniaturas seguem paradas,
    senão seriam 12 tiras baixadas de uma vez. A Sentinela não está aqui
-   porque não temos o modelo 3D dela — ela cai na figura parada. */
+   O modelo dela estava perdido dentro da pasta .git. */
 const GIRO_LARG = 176, GIRO_Q = 24;
 const GIRO = {
   faisca:     { arq:"giro-faisca.png",     alt:106 },
+  sentinela:  { arq:"giro-sentinela.png",  alt:108 },
   lamina:     { arq:"giro-lamina.png",     alt: 78 },
   tita:       { arq:"giro-tita.png",       alt: 64 },
   devastador: { arq:"giro-devastador.png", alt: 94 },
