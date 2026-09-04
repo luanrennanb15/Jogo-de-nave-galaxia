@@ -3178,7 +3178,7 @@ function desenharNaveSprite(s, x, y, ang, t) {
   const inc = inclinacaoTita;                     // −1 a 1, lido da velocidade de giro
   const w = s.tam, h = s.tam * s.alt / s.larg;
   const respiro = !p.movendo ? 1 + Math.sin(t/620)*0.018 : 1;
-  const q = s.q > 1 ? clamp(Math.round(s.meio + inc * s.meio), 0, s.q - 1) : 0;
+  const q = s.q > 1 ? clamp(Math.round(s.meio + inc * s.inv * s.meio), 0, s.q - 1) : 0;
 
   ctx.save();
   ctx.translate(x, y);
@@ -3255,17 +3255,22 @@ function desenharNave(x,y,ang,cor,tam) {
 /* Cada nave tem a sua tira. As que vieram de modelo 3D têm 33 quadros de
    inclinação, de −45° a +45°; as que vieram de uma figura só têm 1, e nelas
    a curva é fingida deformando o sprite na hora. */
+/* `inv` conserta a mão da tira. As duas naves de modelo 3D foram renderizadas
+   com o giro aplicado em espaços diferentes — uma no espaço do modelo, outra
+   já no da tela — e nesses dois casos o mesmo ângulo sai espelhado. Em vez de
+   renderizar tudo de novo, cada tira diz para que lado ela conta. */
 const SPRITE_NAVE = {
-  faisca:     { arq:"nave-faisca.png",     tam: 52, q: 1,  larg:124, alt:120 },
-  lamina:     { arq:"nave-lamina.png",     tam: 62, q: 1,  larg:132, alt:102 },
-  sentinela:  { arq:"nave-sentinela.png",  tam: 74, q: 1,  larg:150, alt:121 },
-  devastador: { arq:"nave-devastador.png", tam: 84, q: 33, larg: 96, alt: 84 },
-  tita:       { arq:"nave-tita.png",       tam: 92, q: 33, larg:104, alt: 70 },
+  faisca:     { arq:"nave-faisca.png",     tam: 52, q: 1,  larg:124, alt:120, inv:  1 },
+  lamina:     { arq:"nave-lamina.png",     tam: 62, q: 1,  larg:132, alt:102, inv:  1 },
+  sentinela:  { arq:"nave-sentinela.png",  tam: 74, q: 1,  larg:150, alt:121, inv:  1 },
+  devastador: { arq:"nave-devastador.png", tam: 84, q: 33, larg: 96, alt: 84, inv: -1 },
+  tita:       { arq:"nave-tita.png",       tam: 92, q: 33, larg:104, alt: 70, inv:  1 },
 };
 for (const id in SPRITE_NAVE) {
   const s = SPRITE_NAVE[id];
   s.img = new Image(); s.img.src = s.arq;
   s.meio = (s.q - 1) / 2;                      // índice do quadro reto
+  if (s.inv == null) s.inv = 1;
 }
 const spriteDaNave = id => {
   const s = SPRITE_NAVE[id];
