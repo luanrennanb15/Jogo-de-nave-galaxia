@@ -156,7 +156,7 @@
                         box-shadow: 0 0 40px rgba(255,60,60,.18); }
   .morteTitulo { font-size: 20px; letter-spacing: .2em; color: #ff8a8a; margin-bottom: 2px; }
   .box { background: #0a1425; border: 1px solid rgba(100,170,240,.35); border-radius: 12px;
-         padding: 20px 24px; width: min(780px, 96vw); max-height: 92vh; overflow-y: auto; }
+         padding: 20px 24px; width: min(780px, 96vw); max-height: 100%; overflow-y: auto; }
   .box h1 { font-size: 20px; letter-spacing: .2em; color: #8fd3ff; margin-bottom: 4px; }
   .box h2 { font-size: 14px; color: #9fd0ff; margin: 16px 0 6px; letter-spacing: .05em; }
   .box p.sub { color: #7b9ac0; font-size: 12px; margin-bottom: 14px; }
@@ -180,7 +180,9 @@
   .tag.ok { background: rgba(120,255,190,.14); color: #8affd8; }
 
   /* painel largo de equipamentos */
-  .box.wide { width: 96vw; max-width: 1180px; height: 92vh; max-height: 92vh;
+  /* altura vem da sobra do overlay, não de vh: no iPhone o vh inclui a faixa
+     do indicador de início e o rodapé do painel ficava fora da tela */
+  .box.wide { width: 96vw; max-width: 1180px; height: 100%; max-height: 100%;
               display: flex; flex-direction: column; padding: 14px 18px; overflow: hidden; }
   .boxHead { display: flex; align-items: center; justify-content: space-between;
              border-bottom: 1px solid rgba(255,255,255,.1); padding-bottom: 8px; margin-bottom: 8px; }
@@ -192,12 +194,12 @@
   .col { overflow-y: auto; min-width: 0; padding-right: 6px; }
   .col.esq { flex: 1; }
   .col.dir { flex: 0 0 40%; border-left: 1px solid rgba(255,255,255,.09); padding-left: 14px; }
-  .slotGrid { display: flex; flex-wrap: wrap; gap: 8px; margin: 5px 0 14px; }
-  .slot { width: 82px; height: 82px; border-radius: 10px; padding: 4px;
+  .slotGrid { display: flex; flex-wrap: wrap; gap: 6px; margin: 5px 0 12px; }
+  .slot { width: 68px; height: 68px; border-radius: 9px; padding: 3px;
           border: 1px dashed rgba(120,180,240,.4); background: rgba(255,255,255,.03);
           display: flex; flex-direction: column; align-items: center; justify-content: center;
           gap: 2px; font-size: 10px; text-align: center; color: #8aa6c8; cursor: pointer; transition: .12s; }
-  .slot b { font-size: 12px; color: #eaf4ff; }
+  .slot b { font-size: 11px; color: #eaf4ff; }
   .slot.cheio { border-style: solid; border-color: rgba(126,232,255,.55); background: rgba(60,140,220,.16); }
   .slot.cheio:hover { border-color: #7ec8ff; }
   .slot.alvo { border-color: #8affd8; background: rgba(120,255,200,.16); }
@@ -354,21 +356,31 @@
                 max-width: 136px; gap: 4px; padding: 5px; }
 
     /* janelas: uma coluna so, e alvos de toque maiores */
-    .box { padding: 14px; width: 96vw; max-height: 90vh; }
-    .box.wide { width: 98vw; height: 94vh; max-height: 94vh; padding: 10px 12px; }
+    /* a sobra do overlay respeita as áreas seguras do aparelho */
+    .overlay { padding: 8px calc(8px + env(safe-area-inset-right))
+                       calc(8px + env(safe-area-inset-bottom))
+                       calc(8px + env(safe-area-inset-left)); }
+    .box { padding: 14px; width: 96vw; }
+    .box.wide { width: 100%; padding: 10px 12px; }
     .box h1 { font-size: 17px; }
     .duasCol { flex-direction: column; gap: 10px; }
     .col.dir { flex: 1 1 auto; border-left: none; padding-left: 0; padding-top: 10px;
                border-top: 1px solid rgba(255,255,255,.09); }
     .cards { grid-template-columns: 1fr; }
-    .slot { width: 74px; height: 74px; }
+    .slot { width: 54px; height: 54px; padding: 2px; gap: 1px; font-size: 8.5px; border-radius: 7px; }
+    .slotGrid { gap: 5px; margin: 4px 0 10px; }
+    /* o botão de encher a seção ocupava a largura toda e virava uma barra */
+    .secHeadV { gap: 4px; margin-top: 9px; }
+    .secHeadV button { align-self: flex-start; padding: 5px 9px; font-size: 10.5px; }
+    .zonaVenda { margin-top: 9px; padding: 8px; font-size: 11px; letter-spacing: .06em; }
     .equipLay { gap: 8px; }
     .equipCats { flex: 0 0 106px; padding-right: 6px; }
     .equipCats button { padding: 7px 8px; font-size: 11px; }
     .fichaFig { min-width: 176px; min-height: 140px; }
     .cartaoLoja { width: 92px; }
     .cartaoFig { height: 38px; }
-    .slot b { font-size: 11px; }
+    .slot b { font-size: 9.5px; }
+    .slot span { font-size: 8px; }
     button { padding: 8px 12px; }
     button.mini { padding: 6px 9px; font-size: 11px; }
     .btnX { width: 34px; height: 34px; }
@@ -5378,7 +5390,7 @@ function quadradoInv(t, id, ctx) {
 
 /* coluna da direita: o depósito, um quadrado por unidade, agrupado por encaixe */
 /* quadrados por fileira no depósito — muda junto com a largura de .slot no CSS */
-const POR_FILEIRA = 4;
+const POR_FILEIRA = 6;   // quadrados por fileira: subiu junto com a diminuição de .slot
 
 /* espaço vazio do depósito: também serve de área para largar o que você tirar */
 const quadradoVazioInv = () => `<div class="slot"
