@@ -6525,6 +6525,7 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
     el("celMenu").addEventListener("pointerdown", e => {
       e.preventDefault(); document.body.classList.toggle("hudAberta");
     });
+    el("celGirar").addEventListener("pointerdown", () => entrarTelaCheia());
   }
 
   /* o joystick so empurra o destino da nave: o motor de movimento
@@ -6546,6 +6547,16 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
       const c = el("celCred");  if (c) c.textContent = fmt(G.creditos);
       const g = el("celCarga"); if (g) g.textContent = cargaUsada() + " / " + cargoMax();
       const f = el("celFogo");  if (f) f.classList.toggle("on", !!(G.player && G.player.atacando));
+      /* o botao Saltar e posicionado em unidade de mundo pelo codigo
+         original; com o zoom isso deixa de ser pixel de tela */
+      const sb = el("saltoBox");
+      if (sb && sb.style.display === "block" && cv.width) {
+        const cr = cv.getBoundingClientRect();
+        const fx = cr.width / cv.width, fy = cr.height / cv.height;
+        const lx = parseFloat(sb.style.left), ty = parseFloat(sb.style.top);
+        if (!isNaN(lx)) sb.style.left = (lx * fx).toFixed(1) + "px";
+        if (!isNaN(ty)) sb.style.top  = (ty * fy).toFixed(1) + "px";
+      }
     }
     return r;
   };
@@ -6559,11 +6570,69 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
     return r;
   };
 
+  /* ---------- campo de visao ----------
+     A camera mostra exatamente cv.width unidades de mundo. Como resize()
+     punha cv.width = largura em pixels CSS, no celular deitado sobravam
+     ~780 unidades contra ~1920 no computador: dai a sensacao de imagem
+     cortada. Aqui o buffer passa a ser maior que a tela, entao cabe mais
+     mundo e de quebra a imagem fica menos esticada. */
+  let zoomCel = 1.55;
+
+  function redimensionarCel() {
+    if (!CEL.ativo) return;
+    const lc = cv.clientWidth, ac = cv.clientHeight;
+    if (!lc || !ac) return;
+    const larg = Math.round(Math.max(lc, Math.min(lc * zoomCel, 1600)));
+    cv.width  = larg;
+    cv.height = Math.round(larg * ac / lc);
+  }
+
+  /* resize() original foi registrado por referencia, entao nao da para
+     embrulhar: registramos o nosso depois, que corrige o tamanho em seguida */
+  window.addEventListener("resize", redimensionarCel);
+  window.addEventListener("orientationchange", () => setTimeout(redimensionarCel, 250));
+  document.addEventListener("fullscreenchange", () => setTimeout(redimensionarCel, 120));
+
+  /* com o buffer maior que a tela, o toque precisa ser convertido de
+     pixel de tela para unidade de mundo, senao a mira sai deslocada */
+  const eventoOriginal = window.telaDoEvento;
+  window.telaDoEvento = function (e) {
+    const p = eventoOriginal.apply(this, arguments);
+    if (!CEL.ativo) return p;
+    const r = cv.getBoundingClientRect();
+    if (!r.width || !r.height) return p;
+    return { sx: p.sx * cv.width / r.width, sy: p.sy * cv.height / r.height };
+  };
+
+  /* ---------- tela cheia ---------- */
+  function entrarTelaCheia() {
+    if (!CEL.ativo || document.fullscreenElement) return;
+    const raiz = document.documentElement;
+    const pedir = raiz.requestFullscreen || raiz.webkitRequestFullscreen ||
+                  raiz.mozRequestFullScreen || raiz.msRequestFullscreen;
+    if (pedir) { try { const r = pedir.call(raiz); if (r && r.catch) r.catch(() => {}); } catch (err) {} }
+    if (screen.orientation && screen.orientation.lock)
+      screen.orientation.lock("landscape").catch(() => {});
+  }
+
+  /* comecar a jogar ja entra em tela cheia: e um toque do jogador,
+     que e o que o navegador exige para deixar */
+  const comecarOriginal = window.startGame;
+  if (typeof comecarOriginal === "function")
+    window.startGame = function () { entrarTelaCheia(); return comecarOriginal.apply(this, arguments); };
+
+  /* muda o zoom sem recarregar: zoomCelular(1.8) mostra mais mundo */
+  window.zoomCelular = function (f) {
+    if (typeof f === "number" && f >= 1 && f <= 3) { zoomCel = f; redimensionarCel(); }
+    return "zoom do celular: " + zoomCel + " (mostrando " + cv.width + " unidades de mundo)";
+  };
+
   /* liga na mao, para testar no computador: modoCelular(true) */
   window.modoCelular = function (ligar) {
     CEL.ativo = ligar !== false;
     document.body.classList.toggle("modoCel", CEL.ativo);
-    if (CEL.ativo) montar();
+    if (CEL.ativo) { montar(); redimensionarCel(); }
+    else { cv.width = cv.clientWidth; cv.height = cv.clientHeight; }
     return CEL.ativo ? "modo celular ligado" : "modo celular desligado";
   };
 
