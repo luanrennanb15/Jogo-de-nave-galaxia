@@ -10,6 +10,9 @@
 <meta name="apple-mobile-web-app-title" content="Astra Conflux">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#04060f">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <link rel="apple-touch-icon" href="icone-180.png">
 <link rel="icon" href="icone-180.png">
 <link rel="manifest" href="manifest.webmanifest">
@@ -237,6 +240,34 @@
   .tiraItens { display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden;
                padding-bottom: 6px; }
   .tiraItens .slot { flex: none; }
+
+  /* Loja: título e categorias na lateral, ficha do item em cima e a
+     prateleira embaixo, rolando de lado. O espaço da figura fica reservado
+     mesmo quando ainda não há imagem daquele item. */
+  .lojaTitulo { font-size: 15px; letter-spacing: .18em; color: #8fd3ff; font-weight: 700;
+                padding: 2px 2px 10px; margin-bottom: 6px;
+                border-bottom: 1px solid rgba(255,255,255,.12); }
+  .fichaLoja { display: flex; gap: 18px; align-items: flex-start; flex-wrap: wrap; }
+  .fichaFig { flex: 0 0 auto; display: flex; align-items: center; justify-content: center;
+              min-width: 190px; min-height: 150px; padding: 10px; border-radius: 10px;
+              background: radial-gradient(circle at 50% 45%, rgba(60,140,220,.18), rgba(8,16,32,.35) 70%);
+              border: 1px solid rgba(120,180,240,.22); }
+  .fichaTxt { flex: 1; min-width: 220px; }
+  .figLoja { display: block; image-rendering: auto; }
+  .figLoja.vazia { display: flex; align-items: center; justify-content: center;
+                   width: 150px; color: #4d6f96; font-size: 11px;
+                   border: 1px dashed rgba(120,180,240,.28); border-radius: 8px; }
+  .cartaoLoja { flex: none; width: 108px; border-radius: 9px; padding: 7px 6px; cursor: pointer;
+                text-align: center; transition: .12s; background: rgba(255,255,255,.04);
+                border: 1px solid rgba(120,180,240,.25); }
+  .cartaoLoja:hover { border-color: #7ec8ff; background: rgba(90,160,240,.14); }
+  .cartaoLoja.sel { border-color: #ffd166; background: rgba(255,190,60,.22);
+                    box-shadow: 0 0 14px rgba(255,209,102,.4); }
+  .cartaoFig { height: 46px; display: flex; align-items: center; justify-content: center;
+               margin-bottom: 5px; }
+  .cartaoLoja b { display: block; font-size: 11.5px; line-height: 1.2; word-break: break-word; }
+  .cartaoLoja .preco { display: block; margin-top: 4px; font-size: 10.5px; color: #ffd166;
+                       background: rgba(0,0,0,.3); border-radius: 4px; padding: 2px 3px; }
   .zonaInv.alvo { outline: 1px dashed #8affd8; outline-offset: 4px; border-radius: 8px; }
   .zonaVenda { margin-top: 12px; padding: 12px 10px; border-radius: 9px; text-align: center;
                font-size: 12px; font-weight: 700; letter-spacing: .1em; cursor: pointer;
@@ -325,7 +356,9 @@
     .equipLay { gap: 8px; }
     .equipCats { flex: 0 0 106px; padding-right: 6px; }
     .equipCats button { padding: 7px 8px; font-size: 11px; }
-    .zonaInv { min-height: 92px; }
+    .fichaFig { min-width: 150px; min-height: 116px; }
+    .cartaoLoja { width: 92px; }
+    .cartaoFig { height: 38px; }
     .slot b { font-size: 11px; }
     button { padding: 8px 12px; }
     button.mini { padding: 6px 9px; font-size: 11px; }
@@ -553,6 +586,7 @@
     <div class="box">
       <h1>ASTRA CONFLUX</h1>
       <p class="sub">Três facções disputam os setores externos. Escolha um lado, monte sua nave, farme, suba de patente.</p>
+      <div class="muted" id="versaoJogo" style="margin:-8px 0 14px;font-size:11px"></div>
 
       <div id="telaEspacos">
         <div class="lbl">Espaços de save — cada um é uma conta separada</div>
@@ -4777,58 +4811,98 @@ function renderBase() { painelAtual === "loja" ? renderLoja() : renderEquip(); }
 let lojaSel = null;                 // { cat, id } do item destacado
 function selLoja(cat, id) { lojaSel = { cat, id }; renderLoja(); }
 
-function quadradoLoja(cat, id, nome, sub, cor) {
-  const on = lojaSel && lojaSel.cat === cat && lojaSel.id === id;
-  return `<div class="slot cheio ${on ? "sel" : ""}" onclick="selLoja('${cat}','${id}')" title="${nome}">
-    <b ${cor ? `style="color:${cor}"` : ""}>${nome}</b><span>${sub}</span></div>`;
+const CATS_LOJA = [
+  ["nave","Naves"],["laser","Canhões"],["lancador","Lança-mísseis"],["escudo","Escudos"],
+  ["motor","Motores"],["modulo","Módulos"],["ammo","Munição"],
+  ["drone","Drones"],["pet","Pet"],["form","Formações"],
+  ["up","Melhorias"],["skylab","Skylab"],
+];
+let catLoja = "nave";
+
+/* o que a prateleira mostra em cada categoria */
+function itensLoja(cat) {
+  if (cat === "nave") return SHIPS.map(s =>
+    ({ id:s.id, nome:s.nome, sub: G.naves.includes(s.id) ? "já é sua" : fmt(s.preco) + " cr" }));
+  if (ITEMS[cat]) return Object.entries(ITEMS[cat]).map(([id,it]) =>
+    ({ id, nome:it.nome, sub: fmt(it.preco) + " cr" }));
+  /* Munição junta tudo o que é consumível de tiro: primeiro as balas de
+     canhão, depois os foguetes e por fim os projéteis do lança-mísseis.
+     Cada grupo sai do mais fraco para o mais forte — ordenados pelo preço,
+     que nos três acompanha o dano. A ordem de jogo (AMMO_ORDER e companhia)
+     não muda: ela manda na numeração da barra e na descida de calibre. */
+  if (cat === "ammo") {
+    const porPreco = (tab, ids) => [...ids].sort((a,b) => (tab[a].preco || 0) - (tab[b].preco || 0));
+    const l = [];
+    for (const k of porPreco(AMMO, AMMO_ORDER))
+      l.push({ cat:"ammo", id:k, nome:AMMO[k].nome, cor:AMMO[k].cor,
+               sub: AMMO[k].infinita ? "grátis" : AMMO[k].preco + " cr/un" });
+    for (const k of porPreco(ROCKETS, ROCKET_ORDER))
+      l.push({ cat:"foguete", id:k, nome:ROCKETS[k].nome, sub: fmt(ROCKETS[k].preco) + " cr" });
+    for (const k of porPreco(PROJETEIS, PROJ_ORDER))
+      l.push({ cat:"proj", id:k, nome:PROJETEIS[k].nome, cor:PROJETEIS[k].cor,
+               sub: fmt(PROJETEIS[k].preco) + " cr" });
+    return l;
+  }
+  if (cat === "drone") { const nc = nComuns();
+    return Object.entries(DRONE_TIPOS).map(([k,dt]) =>
+      ({ id:k, nome:dt.nome, sub: fmt(droneCusto(k, nc)) + " cr", cor:dt.cor })); }
+  if (cat === "pet") return [{ id:"pet", nome:"Pet", cor:PET_COR,
+    sub: G.pet && G.pet.tem ? `nível ${G.pet.nivel}/${PET_NIVEL_MAX}` : fmt(PET_PRECO) + " cr" }];
+  if (cat === "form") return FORMACAO_ORDEM.map(k => { const f = FORMACOES[k];
+    return { id:k, nome:f.nome, cor:f.cor,
+             sub: !f.preco ? "grátis" : temFormacao(k) ? "comprada" : fmt(f.preco) + " cr" }; });
+  if (cat === "up") return UPGRADES.map(u =>
+    ({ id:u.id, nome:u.nome, sub:`nv ${G.up[u.id]}/${u.max}` }));
+  if (cat === "skylab") return Object.keys(SKYLAB).map(r =>
+    ({ id:r, nome:RES[r].nome, sub:`nv ${G.skylab[r]}/${SKYLAB_MAX}`, cor:RES[r].cor }));
+  return [];
 }
-const secaoLoja = (titulo, quadros) =>
-  `<div class="lbl" style="margin-top:8px">${titulo}</div><div class="slotGrid">${quadros}</div>`;
 
-/* coluna da esquerda: tudo o que dá para comprar, em seções */
-function colLoja() {
-  let h = secaoLoja("Naves", SHIPS.map(s =>
-    quadradoLoja("nave", s.id, s.nome, G.naves.includes(s.id) ? "já é sua" : fmt(s.preco) + " cr")).join(""));
-
-  const tit = { laser:"Canhões", escudo:"Escudos", motor:"Motores",
-                modulo:"Módulos", lancador:"Lança-mísseis" };
-  for (const t of ["laser","lancador","escudo","motor","modulo"])
-    h += secaoLoja(tit[t], Object.entries(ITEMS[t]).map(([id,it]) =>
-      quadradoLoja(t, id, it.nome, fmt(it.preco) + " cr")).join(""));
-
-  h += secaoLoja("Projéteis do lança-mísseis", PROJ_ORDER.map(k =>
-    quadradoLoja("proj", k, PROJETEIS[k].nome, PROJETEIS[k].preco + " cr")).join(""));
-
-  h += secaoLoja("Munição", AMMO_ORDER.map(k =>
-    quadradoLoja("ammo", k, AMMO[k].nome, AMMO[k].infinita ? "grátis" : AMMO[k].preco + " cr/un")).join(""));
-
-  h += secaoLoja("Foguetes", ROCKET_ORDER.map(k =>
-    quadradoLoja("foguete", k, ROCKETS[k].nome, fmt(ROCKETS[k].preco) + " cr")).join(""));
-
-  const nc = nComuns(), nu = G.drones.length - nc;
-  h += secaoLoja(`Drones — ${nc}/${DRONE_MAX} comuns e ${nu}/${DRONE_UNICOS.length} únicos`,
-    Object.entries(DRONE_TIPOS).map(([k,dt]) =>
-      quadradoLoja("drone", k, dt.nome, fmt(droneCusto(k, nc)) + " cr", dt.cor)).join(""));
-
-  h += secaoLoja("Pet", quadradoLoja("pet", "pet", "Pet",
-    G.pet && G.pet.tem ? `nível ${G.pet.nivel}/${PET_NIVEL_MAX}` : fmt(PET_PRECO) + " cr", PET_COR));
-
-  h += secaoLoja(`Formação de drones — a partir de ${FORMACAO_MIN} drones`,
-    FORMACAO_ORDEM.map(k => {
-      const f = FORMACOES[k];
-      const preco = !f.preco ? "grátis"
-                  : temFormacao(k) ? "comprada" : fmt(f.preco) + " cr";
-      return quadradoLoja("form", k, f.nome, preco, f.cor);
-    }).join(""));
-
-  h += secaoLoja("Melhorias permanentes", UPGRADES.map(u =>
-    quadradoLoja("up", u.id, u.nome, `nv ${G.up[u.id]}/${u.max}`)).join(""));
-
-  h += secaoLoja("Skylab", Object.keys(SKYLAB).map(r =>
-    quadradoLoja("skylab", r, RES[r].nome, `nv ${G.skylab[r]}/${SKYLAB_MAX}`, RES[r].cor)).join(""));
-
-  return h;
+/* Figura do item. As naves saem da própria tira de sprites — o quadro do
+   meio é o da nave reta — e os drones e o pet têm figura única. O resto
+   ainda não tem imagem, e mostra o espaço reservado. */
+const FIG_DRONE = { inovat:"drone-inovat.png", hercules:"drone-hercules.png",
+                    android:"drone-android.png", zeus:"drone-zeus.png" };
+function figuraLoja(cat, id, alt) {
+  if (cat === "nave") {
+    const sp = SPRITE_NAVE[id];
+    if (sp && sp.img && sp.img.complete && sp.img.naturalWidth > 0) {
+      const e = alt / sp.alt;
+      return `<div class="figLoja" style="width:${Math.round(sp.larg*e)}px;height:${Math.round(alt)}px;
+        background-image:url('${sp.arq}');
+        background-size:${Math.round(sp.larg*sp.q*e)}px ${Math.round(alt)}px;
+        background-position:-${Math.round(sp.meio*sp.larg*e)}px 0"></div>`;
+    }
+  }
+  const arq = cat === "drone" ? FIG_DRONE[id] : cat === "pet" ? "pet.png" : null;
+  if (arq) return `<img class="figLoja" src="${arq}" style="height:${alt}px" alt="">`;
+  return `<div class="figLoja vazia" style="height:${alt}px"><span>sem figura ainda</span></div>`;
 }
+
+function cartaoLoja(cat, it) {
+  const c = it.cat || cat;                 // dentro de Munição cada item guarda a sua
+  const on = lojaSel && lojaSel.cat === c && lojaSel.id === it.id;
+  return `<div class="cartaoLoja ${on ? "sel" : ""}" onclick="selLoja('${c}','${it.id}')" title="${it.nome}">
+    <div class="cartaoFig">${figuraLoja(c, it.id, 40)}</div>
+    <b ${it.cor ? `style="color:${it.cor}"` : ""}>${it.nome}</b>
+    <span class="preco">${it.sub}</span></div>`;
+}
+
+function catL(id) {
+  catLoja = id;
+  lojaSel = primeiroDaLoja(id);            // já abre a ficha do primeiro
+  renderLoja();
+}
+
+const primeiroDaLoja = cat => {
+  const l = itensLoja(cat);
+  return l.length ? { cat: l[0].cat || cat, id: l[0].id } : null;
+};
+/* a seleção vale se o item destacado está na lista da categoria aberta —
+   não dá para comparar categorias direto, porque em Munição os itens
+   carregam a própria ("foguete", "proj") */
+const selNaLista = cat => lojaSel &&
+  itensLoja(cat).some(it => (it.cat || cat) === lojaSel.cat && it.id === lojaSel.id);
 
 function botaoCompra(preco, acao, rotulo) {
   const pode = G.creditos >= preco;
@@ -4981,26 +5055,38 @@ function detalheLoja() {
                              : botaoCompra(custo, `upSkylab('${id}')`, `Subir para o nível ${nv+1}`);
   }
 
-  return cabec +
-    `<div class="val" style="font-size:15px;${cor ? `color:${cor}` : ""}">${nome}</div>
-     <div class="muted" style="margin:6px 0 12px;line-height:1.6">${desc}</div>
-     ${info}
-     <div style="margin-top:14px">${acoes}</div>`;
+  return `<div class="fichaLoja">
+      <div class="fichaFig">${figuraLoja(cat, id, 132)}</div>
+      <div class="fichaTxt">
+        <div class="val" style="font-size:16px;${cor ? `color:${cor}` : ""}">${nome}</div>
+        <div class="muted" style="margin:6px 0 12px;line-height:1.6">${desc}</div>
+        ${info}
+        <div style="margin-top:14px">${acoes}</div>
+      </div></div>`;
 }
 
 function renderLoja() {
   const cab = `<div class="boxHead">
-      <div><span class="val" style="font-size:15px;letter-spacing:.14em">LOJA</span>
-        <span class="muted"> · Setor ${G.setor+1} — ${sectorData().nome} ·
-        <span class="credits">${fmt(G.creditos)} cr</span></span></div>
+      <div><span class="muted">Setor ${G.setor+1} — ${sectorData().nome} · </span>
+        <span class="credits">${fmt(G.creditos)} cr</span></div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="mini" onclick="openEquip()">Equipamentos</button>
         <div class="btnX" onclick="fecharModal()" title="Fechar">✕</div>
       </div>
     </div>`;
-  abrirModal(cab + `<div class="duasCol">
-    <div class="col esq">${colLoja()}</div>
-    <div class="col dir">${detalheLoja()}</div></div>`, true);
+  // se a seleção não pertence à categoria aberta, destaca o primeiro item dela
+  if (!selNaLista(catLoja)) lojaSel = primeiroDaLoja(catLoja);
+  const menu = `<div class="equipCats"><div class="lojaTitulo">LOJA</div>` +
+    CATS_LOJA.map(([id,n]) =>
+      `<button class="mini ${catLoja === id ? "primary" : ""}" onclick="catL('${id}')">${n}</button>`
+    ).join("") + `</div>`;
+  const prateleira = itensLoja(catLoja).map(it => cartaoLoja(catLoja, it)).join("");
+
+  abrirModal(cab + `<div class="equipLay">${menu}
+    <div class="equipMain">
+      <div class="equipTopo">${detalheLoja()}</div>
+      <div class="equipTira"><div class="tiraItens">${prateleira}</div></div>
+    </div></div>`, true);
 }
 
 /* ===================== EQUIPAMENTOS ===================== */
@@ -5256,41 +5342,39 @@ function quadradoInv(t, id, ctx) {
     <b>${it.nome}</b><span>${textoItem(t, id)}</span></div>`;
 }
 
-/* ---- depósito: uma fileira só, que rola de lado, filtrada pela categoria ----
-   Antes era uma coluna à direita com grade de 4 por fileira: no celular
-   sobrava altura para uma fileira e o resto ficava tampado. */
-const CATS_EQUIP = {
-  nave:   [["nave","Nave"],["laser","Canhões"],["lancador","Lança-mísseis"],
-           ["escudo","Escudos"],["motor","Motores"],["modulo","Módulos"]],
-  drones: [["nave","Drones"],["laser","Canhões"],["escudo","Escudos"]],
-  pet:    [["nave","Pet"],["laser","Canhões"],["escudo","Escudos"],["petmod","Módulos de pet"]],
-};
-let catEquip = "nave";
-function catE(id) { catEquip = id; renderEquip(); }
+/* coluna da direita: o depósito, um quadrado por unidade, agrupado por encaixe */
+/* quadrados por fileira no depósito — muda junto com a largura de .slot no CSS */
+const POR_FILEIRA = 4;
 
-/* quanto ainda cabe do item id somando a folga de todos os drones —
-   morava no bloco antigo do depósito e continua sendo usado aqui */
+/* espaço vazio do depósito: também serve de área para largar o que você tirar */
+const quadradoVazioInv = () => `<div class="slot"
+  ondragover="event.preventDefault(); this.classList.add('alvo')"
+  ondragleave="this.classList.remove('alvo')"
+  ondrop="this.classList.remove('alvo'); soltarEm({k:'inv'})"
+  title="Espaço livre do depósito"><span>vazio</span></div>`;
+
+/* folga aproveitável quando o destino é um drone (a validação fina é no soltar) */
 const folgaDronesMax = id => G.drones.length
   ? Math.max(0, ...G.drones.map((_,di) => folgaDrone(di, id))) : 0;
 
-/* TITULO_CAT lá de cima fala dos encaixes da nave; aqui é o nome da
-   categoria no depósito, que não é a mesma lista */
-const TITULO_DEP = { laser:"Canhões", escudo:"Escudos", motor:"Motores", modulo:"Módulos",
-                     lancador:"Lança-mísseis", petmod:"Módulos de pet" };
-const ROTULO_DEP = { laser:"Adicionar os melhores canhões", escudo:"Adicionar os melhores escudos",
-                     motor:"Adicionar os melhores motores", modulo:"Adicionar módulos",
-                     lancador:"Adicionar os melhores lançadores" };
-
-function colTira(ctx) {
+function colItens(ctx) {
   const paraDrones = ctx === "drones", paraPet = ctx === "pet";
+  const paraNave = !paraDrones && !paraPet;
+  let h = "", total = 0;
+  const titulo = { laser:"Canhões", escudo:"Escudos", motor:"Motores",
+                   modulo:"Módulos", lancador:"Lança-mísseis", petmod:"Módulos de pet" };
+  const rotulo = { laser:"Adicionar os melhores canhões", escudo:"Adicionar os melhores escudos",
+                   motor:"Adicionar os melhores motores", modulo:"Adicionar módulos",
+                   lancador:"Adicionar os melhores lançadores" };
+  const nota   = { escudo:" · vão no encaixe de gerador", motor:" · vão no encaixe de gerador" };
+  // drone aceita canhão e escudo; o pet aceita também os módulos dele
   const tipos = paraDrones ? ["laser","escudo"]
               : paraPet    ? ["laser","escudo","petmod"]
               : ["laser","lancador","escudo","motor","modulo"];
-  // a categoria "nave" não filtra nada: mostra o depósito inteiro
-  const sel = tipos.includes(catEquip) ? [catEquip] : tipos;
 
-  let quadros = "", n = 0;
-  for (const t of sel) {
+  for (const t of tipos) {
+    let quadros = "", n = 0;
+    // depósito também na ordem do mais fraco para o mais forte
     const ids = Object.keys(ITEMS[t]).sort((a,b) => pesoItem(a) - pesoItem(b));
     for (const id of ids) {
       const l = paraDrones ? livres(t,id) + folgaDronesMax(id)
@@ -5298,34 +5382,23 @@ function colTira(ctx) {
               : disponivel(t,id);
       for (let k = 0; k < l; k++) { quadros += quadradoInv(t, id, ctx); n++; }
     }
+    total += n;
+    h += `<div class="secHeadV">
+        <span class="lbl">${titulo[t]} — ${n} ${n === 1 ? "unidade" : "unidades"}${paraNave ? (nota[t] || "") : ""}</span>
+        ${paraNave ? `<button class="mini" onclick="preencherCom('${t}')">${rotulo[t]}</button>` : ""}
+      </div>`;
+    // completa a fileira com quadrados vazios; seção sem nada mostra uma fileira inteira
+    const faltam = n === 0 ? POR_FILEIRA : (POR_FILEIRA - (n % POR_FILEIRA)) % POR_FILEIRA;
+    for (let k = 0; k < faltam; k++) quadros += quadradoVazioInv();
+    h += `<div class="slotGrid">${quadros}</div>`;
   }
-  const nome = sel.length === 1 ? TITULO_DEP[sel[0]] : "Depósito inteiro";
-  const encher = (sel.length === 1 && !paraDrones && !paraPet && ROTULO_DEP[sel[0]])
-    ? `<button class="mini" onclick="preencherCom('${sel[0]}')">${ROTULO_DEP[sel[0]]}</button>` : "";
-  const vazio = `<div class="muted" style="padding:16px 4px">Nada nesta categoria.
-    Compre na Loja, ou escolha outra à esquerda.</div>`;
+  if (!total) h += `<div class="muted" style="margin-top:6px">Tudo o que você tem está montado. Compre mais na Loja.</div>`;
 
-  return `<div class="tiraCab">
-      <span class="lbl">${nome} — ${n} ${n === 1 ? "unidade" : "unidades"} · arraste ou dê dois cliques para montar</span>
-      <div style="display:flex;gap:6px">${encher}
-        <button class="mini danger" onclick="abrirVenda()">Vender itens</button></div>
-    </div>
-    <div class="tiraItens zonaInv" ondragover="event.preventDefault(); this.classList.add('alvo')"
+  return `<div class="lbl">Depósito — arraste ou dê dois cliques para montar</div>
+    <div class="zonaInv" ondragover="event.preventDefault(); this.classList.add('alvo')"
       ondragleave="this.classList.remove('alvo')"
-      ondrop="this.classList.remove('alvo'); soltarEm({k:'inv'})">${n ? quadros : vazio}</div>`;
-}
-
-/* categorias na lateral esquerda; o corpo fica com os encaixes em cima */
-function layoutEquip(ctx, topo) {
-  if (!CATS_EQUIP[ctx].some(([id]) => id === catEquip)) catEquip = "nave";
-  const menu = `<div class="equipCats">` + CATS_EQUIP[ctx].map(([id,nome]) =>
-    `<button class="mini ${catEquip === id ? "primary" : ""}" onclick="catE('${id}')">${nome}</button>`
-  ).join("") + `</div>`;
-  return `<div class="equipLay">${menu}
-    <div class="equipMain">
-      <div class="equipTopo">${topo}</div>
-      <div class="equipTira">${colTira(ctx)}</div>
-    </div></div>`;
+      ondrop="this.classList.remove('alvo'); soltarEm({k:'inv'})">${h}</div>
+    <div class="zonaVenda" onclick="abrirVenda()">VENDER ITENS</div>`;
 }
 
 function renderEquip() {
@@ -5395,9 +5468,9 @@ function renderEquip() {
       mas encaixar, tirar, vender ou reparar só dentro da área da nave-mãe ou de um portal.</div>`);
 
   const corpo =
-    abaEquip === "nave"   ? layoutEquip("nave",   colNave())   :
-    abaEquip === "drones" ? layoutEquip("drones", colDrones()) :
-    abaEquip === "pet"    ? layoutEquip("pet",    colPet())    :
+    abaEquip === "nave"   ? `<div class="duasCol"><div class="col esq">${colNave()}</div><div class="col dir">${colItens("nave")}</div></div>` :
+    abaEquip === "drones" ? `<div class="duasCol"><div class="col esq">${colDrones()}</div><div class="col dir">${colItens("drones")}</div></div>` :
+    abaEquip === "pet"    ? `<div class="duasCol"><div class="col esq">${colPet()}</div><div class="col dir">${colItens("pet")}</div></div>` :
     `<div class="col" style="flex:1">${c}</div>`;
 
   abrirModal(cab + corpo, true);
@@ -6614,17 +6687,41 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
     const box = document.querySelector("#startScreen .box");
     if (!box) return;
     const txt = ehIOS()
-      ? 'No iPhone o Safari nao tem tela cheia. Para jogar sem a barra do navegador em cima: toque em <b>Compartilhar</b> e depois em <b>Adicionar a Tela de Inicio</b>. Abrindo pelo icone que aparecer, o jogo ocupa a tela inteira.'
+      ? 'No iPhone o Safari não tem tela cheia. Para jogar sem a barra do navegador em cima: toque em <b>Compartilhar</b> e depois em <b>Adicionar à Tela de Início</b>. Abrindo pelo ícone que aparecer, o jogo ocupa a tela inteira. <b>Não remova o ícone para atualizar</b> — removê-lo apaga os saves. Basta fechar e abrir o jogo.'
       : 'Para jogar sem a barra do navegador, use <b>Tela cheia</b> no menu do jogo, ou adicione a pagina a tela de inicio pelo menu do navegador.';
     box.insertAdjacentHTML("afterbegin", '<div class="avisoBase" id="celDicaPWA">' + txt + '</div>');
   }
 
+  /* No iPhone o jogo salvo na tela de início guardava a página antiga e só
+     atualizava se você removesse e recriasse o ícone — e remover o ícone
+     apaga o localStorage, ou seja, os saves. O service worker busca a versão
+     nova do servidor toda vez que o jogo abre, então basta fechar e abrir. */
+  if (location.protocol === "https:" && "serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("sw.js")
+        .then(reg => { reg.update().catch(() => {}); })
+        .catch(() => {});
+    });
+  }
+
+  /* carimbo de versão: document.lastModified vem do próprio arquivo, então
+     não há número para eu esquecer de subir */
+  function mostrarVersao() {
+    const v = el("versaoJogo");
+    if (!v) return;
+    let quando = document.lastModified || "";
+    v.textContent = quando ? "versão de " + quando : "";
+    if (comoApp()) v.textContent += " · rodando como app";
+  }
+
   function iniciar() {
+    mostrarVersao();
     if (!ehCelular()) return;
     window.modoCelular(true);
     dicaTelaCheia();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
   else iniciar();
+  window.mostrarVersaoJogo = mostrarVersao;
 })();
 </script>
