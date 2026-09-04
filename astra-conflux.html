@@ -75,11 +75,6 @@
   .ganhoLinha:last-child { border-bottom: none; }
   #topRight { top: 8px; right: 8px; min-width: 176px; text-align: right; }
   #botRight { bottom: 8px; right: 8px; display: flex; gap: 5px; padding: 7px; flex-wrap: wrap; max-width: 210px; justify-content: flex-end; }
-  #sectorName { top: 8px; left: 50%; transform: translateX(-50%); text-align: center;
-                letter-spacing: .16em; text-transform: uppercase; font-size: 11px; color: #8fc4ff; }
-  #targetPanel { top: 86px; left: 50%; transform: translateX(-50%); width: 222px; text-align: center; display: none; }
-  #eventPanel { top: 150px; left: 50%; transform: translateX(-50%); text-align: center; display: none;
-                border-color: rgba(255,140,90,.5); color: #ffb37a; }
   #abilityBar { bottom: 8px; left: 50%; transform: translateX(-50%);
                 display: flex; align-items: center; gap: 8px; padding: 7px; }
   .abRows { display: flex; flex-direction: column; gap: 5px; }
@@ -282,10 +277,6 @@
     #logPanel  { display: none !important; }
     #hint      { display: none !important; }
 
-    #sectorName { top: calc(6px + env(safe-area-inset-top));
-                  font-size: 9px; letter-spacing: .1em; padding: 4px 8px; }
-    #targetPanel { top: 66px; width: 172px; }
-    #eventPanel { top: 124px; font-size: 10.5px; max-width: 78vw; }
     #toast { top: 96px; }
     .toastMsg { font-size: 11px; padding: 4px 11px; }
 
@@ -327,7 +318,6 @@
   /* celular deitado: sobra pouca altura, entao o que e vertical encolhe */
   @media (pointer: coarse) and (max-height: 460px) {
     #petCard { top: 138px; }
-    #targetPanel { top: 60px; }
     #botRight { bottom: calc(104px + env(safe-area-inset-bottom)); }
     .ab { width: 40px; height: 40px; }
   }
@@ -376,9 +366,6 @@
       padding: 6px 10px; font-size: 12px; white-space: nowrap; }
   body.modoCel.hudAberta #celInfo { display: none; }
 
-  body.modoCel #sectorName { top: calc(8px + env(safe-area-inset-top)); }
-  body.modoCel #targetPanel { top: 52px; width: 190px; }
-  body.modoCel #eventPanel { top: 108px; }
   body.modoCel #toast { top: 92px; }
 
   /* --- joystick, no polegar esquerdo --- */
@@ -505,17 +492,6 @@
   </div>
 
   <div class="panel" id="gainPanel"></div>
-
-  <div class="panel" id="sectorName">—</div>
-
-  <div class="panel" id="targetPanel">
-    <div class="val" id="tgName">—</div>
-    <div class="bar"><i class="shF" id="tgSh" style="width:0%"></i></div>
-    <div class="bar"><i class="hpF" id="tgHp" style="width:0%"></i></div>
-    <div class="muted" id="tgInfo"></div>
-  </div>
-
-  <div class="panel" id="eventPanel"></div>
 
   <div class="panel" id="logPanel"></div>
 
@@ -1028,8 +1004,6 @@ const RAIO_COLETA  = 70;
 
 const CAIXA_MAX = 9;
 const CAIXA_INTERVALO = 5200;
-const INVASAO_INTERVALO = [110000, 170000];
-const INVASAO_DURACAO = 70000;
 /* ===================== ESTADO E VALORES DERIVADOS ===================== */
 
 const cv = document.getElementById("cv");
@@ -1066,11 +1040,11 @@ function novoJogo(nome, factionId) {
     carga: { titanio:0, plasma:0, cristal:0 },
     setor: 0, clan: null, clanXp: 0,
     missoes: [], oferta: [], missaoSeq: 1,
-    stats: { abates:0, pilotos:0, caixas:0, mortes:0, ganho:0, missoes:0, invasoes:0 },
+    stats: { abates:0, pilotos:0, caixas:0, mortes:0, ganho:0, missoes:0 },
     npcs: NPC_NAMES.map(n => ({ nome:n, pontos: 800 + Math.random()*90000, taxa: 20 + Math.random()*340 })),
     player: null, inimigos: [], loot: [], caixas: [], particulas: [], danos: [], log: [], tiros: [],
     barra: barraPadrao(),
-    invasao: null, proxInvasao: 0, proxCaixa: 0, coleta: null,
+    proxCaixa: 0, coleta: null,
     cam: { x:0, y:0 }, tempo: 0, jogado: 0,
   };
 }
@@ -1609,15 +1583,12 @@ function iniciarSetor(estado) {
   rastro = []; inclinacaoTita = 0; poeira = []; choques = [];
   tremor = { forca: 0, ate: 0 };
   G.inimigos = []; G.loot = []; G.caixas = []; G.particulas = []; G.danos = []; G.tiros = [];
-  G.invasao = null; G.coleta = null; G.salto = null; G.saltoAlvo = null; G.portalPerto = null;
-  G.proxInvasao = G.tempo + rnd(INVASAO_INTERVALO[0], INVASAO_INTERVALO[1]);
+  G.coleta = null; G.salto = null; G.saltoAlvo = null; G.portalPerto = null;
   G.proxCaixa = G.tempo + 2000;
   for (const [tipo, qtd] of Object.entries(s.spawn)) for (let i = 0; i < qtd; i++) spawnAlien(tipo);
   for (let i = 0; i < s.pvp; i++) spawnPiloto();
   for (let i = 0; i < 5; i++) spawnCaixa();
   gerarEstrelas();
-  document.getElementById("sectorName").textContent =
-    `Setor ${G.setor+1} — ${s.nome} · nível ${s.nivel}+` + (s.pvp ? " · ZONA CONTESTADA" : "");
 }
 
 function posLonge(minDist) {
@@ -2314,9 +2285,6 @@ function atualizar(dt) {
     } else G.coleta.t0 = null;
   }
 
-  // invasão
-  if (!G.invasao && T > G.proxInvasao) iniciarInvasao();
-  if (G.invasao && T > G.invasao.fim) encerrarInvasao();
 
   // respawn
   const s = sectorData();
@@ -2914,8 +2882,7 @@ function matarInimigo(en) {
   logar("Abateu " + ed.nome + ".");
 
   /* Morreu um, nasce outro na hora, num ponto qualquer do mapa longe da base.
-     Só vale para os bichos normais do setor: elite de invasão não repõe, e
-     piloto tem a conta dele. */
+     Piloto não repõe: ele tem a conta dele. */
   if (!ed.elite && !ed.piloto && sectorData().spawn[en.tipo]) spawnAlien(en.tipo);
 
   // cai uma única carga por abate, escolhida entre os recursos possíveis
@@ -3060,36 +3027,6 @@ function reviver(modo) {
 const invulneravel = () => !!(G.player && G.tempo < (G.player.invulAte || 0));
 
 /* ===================== EVENTOS ===================== */
-
-function iniciarInvasao() {
-  const s = sectorData();
-  const tipos = Object.keys(s.spawn);
-  const p = posLonge(raioSeguro() + 700);
-  G.invasao = { x:p.x, y:p.y, fim: G.tempo + INVASAO_DURACAO, elites: [] };
-  for (let i = 0; i < 6; i++) {
-    const t = tipos[Math.floor(Math.random()*tipos.length)];
-    if (ENEMIES[t].boss) continue;
-    const e = spawnAlien(t, true);
-    e.x = e.dx = p.x + (Math.random()-0.5)*420;
-    e.y = e.dy = p.y + (Math.random()-0.5)*420;
-    G.invasao.elites.push(e);
-  }
-  toast("PORTAL DE INVASÃO ABERTO — inimigos elite, 3× recompensa");
-  logar("Portal de invasão detectado no setor.");
-  beep(90, 0.3);
-}
-
-function encerrarInvasao() {
-  if (!G.invasao) return;
-  for (const e of G.invasao.elites) {
-    const i = G.inimigos.indexOf(e);
-    if (i >= 0) { explosao(e.x, e.y, "#ff8a3d", 16); G.inimigos.splice(i,1); }
-  }
-  G.invasao = null;
-  G.stats.invasoes++;
-  G.proxInvasao = G.tempo + rnd(INVASAO_INTERVALO[0], INVASAO_INTERVALO[1]);
-  logar("O portal de invasão se fechou.");
-}
 
 const foraDoMapa = () => {
   const p = G.player;
@@ -3270,7 +3207,6 @@ function desenhar(t) {
 
   desenharEstacao(t);
   for (const gt of gates()) desenharPortal(gt, t);
-  if (G.invasao) desenharInvasao(t);
 
   for (const c of G.caixas) desenharCaixa(c, t);
 
@@ -4005,17 +3941,19 @@ function desenharInimigo(en, t) {
     ctx.lineWidth = 1;
   }
   if (en.hp < en.maxHp || en.sh < en.maxSh || G.player.alvo === en) {
-    const w = Math.max(30, r*2.4), x0 = en.x - w/2, y0 = en.y - r - 15;
-    ctx.fillStyle = "rgba(0,0,0,.5)"; ctx.fillRect(x0,y0,w,6);
-    ctx.fillStyle = "#4cc9ff"; ctx.fillRect(x0,y0,w*Math.max(0,en.sh/en.maxSh),3);
-    ctx.fillStyle = "#ff5a6e"; ctx.fillRect(x0,y0+3,w*Math.max(0,en.hp/en.maxHp),3);
+    /* maiores do que antes: agora que o painel do alvo saiu da tela,
+       estas barrinhas e o nome sao a unica leitura do inimigo */
+    const w = Math.max(48, r*3.1), x0 = en.x - w/2, y0 = en.y - r - 20;
+    ctx.fillStyle = "rgba(0,0,0,.6)"; ctx.fillRect(x0-1,y0-1,w+2,11);
+    ctx.fillStyle = "#4cc9ff"; ctx.fillRect(x0,y0,w*Math.max(0,en.sh/en.maxSh),4);
+    ctx.fillStyle = "#ff5a6e"; ctx.fillRect(x0,y0+4,w*Math.max(0,en.hp/en.maxHp),5);
   }
   /* Nome embaixo do bicho. Monstro sai em vermelho; piloto continua na cor
      da facção dele, que é o que diz de que lado ele está. O contorno preto
      é para o nome não sumir contra a nebulosa clara. */
-  const yNome = en.y + r + 30;
-  ctx.font = "600 13px system-ui"; ctx.textAlign = "center";
-  ctx.lineWidth = 3.5; ctx.strokeStyle = "rgba(0,0,0,.75)";
+  const yNome = en.y + r + 34;
+  ctx.font = "700 17px system-ui"; ctx.textAlign = "center";
+  ctx.lineWidth = 4.5; ctx.strokeStyle = "rgba(0,0,0,.8)";
   ctx.strokeText(ed.nome, en.x, yNome);
   ctx.fillStyle = ed.piloto ? ed.cor : "#ff5a5a";
   ctx.fillText(ed.nome, en.x, yNome);
@@ -4121,18 +4059,6 @@ function desenharPortal(g, t) {
      botão Saltar, que surge logo acima dele quando você chega perto. */
 }
 
-function desenharInvasao(t) {
-  const iv = G.invasao;
-  ctx.save(); ctx.translate(iv.x, iv.y); ctx.rotate(-t/900);
-  for (let i = 0; i < 4; i++) {
-    ctx.globalAlpha = .55 - i*.1; ctx.strokeStyle = "#ff8a3d"; ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.ellipse(0,0,90-i*18,90-i*18,i*.7,0,6.29); ctx.stroke();
-  }
-  ctx.restore(); ctx.globalAlpha = 1;
-  ctx.font = "700 13px system-ui"; ctx.textAlign = "center"; ctx.fillStyle = "#ffb37a";
-  ctx.fillText("PORTAL DE INVASÃO", iv.x, iv.y + 112);
-}
-
 function desenharCaixa(c, t) {
   const cores = { cred:"#ffd166", mcb:"#7ee8ff", ucb:"#c66bff", foguete:"#ff8a3d", recurso:"#8affd8" };
   const cor = cores[c.tipo] || "#8affd8";
@@ -4175,7 +4101,6 @@ function desenharRadar() {
   ctx.setLineDash([]);
   ctx.fillStyle = "rgba(255,209,102,.85)";
   for (const c of G.caixas) ctx.fillRect(x+c.x*sx-1, y+c.y*sy-1, 3,3);
-  if (G.invasao) { ctx.fillStyle = "#ff8a3d"; ctx.fillRect(x+G.invasao.x*sx-3, y+G.invasao.y*sy-3, 7,7); }
   // inimigos sempre em vermelho (mais forte quando estão te perseguindo)
   for (const en of G.inimigos) {
     ctx.fillStyle = en.agro ? "#ff2b2b" : "rgba(255,90,90,.7)";
@@ -4649,26 +4574,6 @@ function atualizarHUD() {
       return `<span style="color:${on ? "#ffd166" : "#7b9ac0"}">${i+1}:${q}</span>`;
     }).join(" · ");
 
-  const tp = el("targetPanel");
-  if (alvoEhPet(p.alvo)) {                        // mirando no próprio pet
-    const mxS = petMaxShield();
-    tp.style.display = "block";
-    el("tgName").textContent = `${nomeDoPet()} [${G.nome}]`;
-    el("tgName").style.color = "#61e08a";
-    el("tgSh").style.width = (mxS > 0 ? 100*clamp(p.alvo.sh/mxS,0,1) : 0) + "%";
-    el("tgHp").style.width = (100*clamp(p.alvo.hp/petMaxHp(),0,1)) + "%";
-    el("tgInfo").textContent = Math.round(dist(p.x,p.y,p.alvo.x,p.alvo.y)) + "m · seu pet · não revida";
-  } else if (p.alvo) {
-    const ed = p.alvo.d;
-    tp.style.display = "block";
-    el("tgName").textContent = ed.nome;
-    el("tgName").style.color = ed.cor;
-    el("tgSh").style.width = (100*Math.max(0,p.alvo.sh)/p.alvo.maxSh) + "%";
-    el("tgHp").style.width = (100*Math.max(0,p.alvo.hp)/p.alvo.maxHp) + "%";
-    el("tgInfo").textContent = Math.round(dist(p.x,p.y,p.alvo.x,p.alvo.y)) + "m · " +
-      fmt(ed.cred) + " cr · " + fmt(ed.xp) + " xp" + (ed.honra ? " · " + fmt(ed.honra) + " honra" : "");
-  } else tp.style.display = "none";
-
   atualizarCardPet();
 
   // feed de recompensas
@@ -4732,13 +4637,6 @@ function atualizarHUD() {
     eb.title = perto ? "Equipamentos — equipar, vender, reparar"
                      : "Equipamentos — só dá para mexer na área da nave-mãe ou de um portal";
   }
-
-  const ev = el("eventPanel");
-  if (G.invasao) {
-    ev.style.display = "block";
-    ev.innerHTML = `<b>INVASÃO ATIVA</b> · ${Math.ceil((G.invasao.fim-G.tempo)/1000)}s · ` +
-                   `${G.invasao.elites.filter(e => G.inimigos.includes(e)).length} elites restantes`;
-  } else ev.style.display = "none";
 
   const marcarCd = (node, resta, ligado) => {
     if (!node) return;
@@ -6082,7 +5980,6 @@ function openProfile() {
     <div class="row"><div>Pilotos inimigos abatidos</div><div class="val">${fmt(st.pilotos)}</div></div>
     <div class="row"><div>Caixas recolhidas</div><div class="val">${fmt(st.caixas)}</div></div>
     <div class="row"><div>Missões entregues</div><div class="val">${fmt(st.missoes)}</div></div>
-    <div class="row"><div>Invasões sobrevividas</div><div class="val">${fmt(st.invasoes)}</div></div>
     <div class="row"><div>Naves perdidas</div><div class="val">${fmt(st.mortes)}</div></div>
     <div class="row"><div>Créditos ganhos no total</div><div class="credits">${fmt(st.ganho)}</div></div>
     <div class="row"><div>Tempo de voo</div><div class="val">${min} min</div></div>
@@ -6122,7 +6019,6 @@ function openHelp() {
     <div class="row"><div class="val">Gasto de munição</div><div class="muted">cada tiro desconta uma unidade por canhão que participou dele: os da nave mais os montados nos drones num tiro seu, e os do pet num tiro dele. Mais canhão significa mais dano e também mais consumo. A LCB-10 é ilimitada e nunca é descontada. Acabando a munição escolhida, ela não pula direto para a básica: desce um degrau de cada vez pelo multiplicador — ×5, ×4, ×3, ×2,5, ×2, ×1 — e para na primeira que ainda tiver bala. Insistir numa que acabou faz a mesma coisa. Os foguetes seguem a mesma regra, do PLT-3030 para o PLT-2021 e daí para o R-310. Só o lança-mísseis fica de fora: acabando o projétil, a troca é na mão. A aba Munição em Equipamentos mostra o custo por tiro e para quantos tiros o porão dá</div></div>
     <div class="row"><div class="val">Recompensas</div><div class="muted">créditos, XP e honra entram sozinhos ao abater — aparecem listados no canto superior esquerdo</div></div>
     <div class="row"><div class="val">Carga e caixas</div><div class="muted">ficam boiando no espaço: clique nelas e a nave vai até lá e recolhe ao chegar</div></div>
-    <div class="row"><div class="val">Portal de invasão</div><div class="muted">elites com 3× recompensa, some depois de 70s</div></div>
     <div class="row"><div class="val">Zona contestada</div><div class="muted">pilotos de outras facções dão honra e patente</div></div>
     <div class="row"><div class="val">Clicar e segurar</div><div class="muted">a nave segue o cursor enquanto o botão estiver pressionado</div></div>
     <div class="row"><div class="val">Drones</div><div class="muted">Android Demo leva 1 equipamento, Inovat leva 2; sobem de nível abatendo inimigos e voam em formação com a nave. São 8 vagas para esses dois. Hercules e Zeus são únicos, um de cada, não ocupam vaga nenhuma e voam nas laterais — com tudo comprado a frota chega a 10</div></div>
