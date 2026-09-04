@@ -104,8 +104,6 @@
   .abGear:hover { background: rgba(90,160,240,.22); border-color: #7ec8ff; }
   .abGear svg { transition: transform .4s; }
   .abGear:hover svg { transform: rotate(60deg); }
-  #dockHint { bottom: 70px; left: 50%; transform: translateX(-50%); display: none;
-              text-align: center; font-size: 11.5px; padding: 5px 12px; }
   /* fica ancorado no portal, dentro do mapa, e não no rodapé da tela */
   #saltoBox { display: none; padding: 5px 6px; border-color: rgba(255,209,102,.55);
               background: rgba(8,16,32,.9); }
@@ -221,6 +219,24 @@
   .invItem:hover { border-color: #7ec8ff; background: rgba(90,160,240,.12); }
   .invItem.vazio { opacity: .34; cursor: default; }
   .zonaInv { min-height: 120px; }
+
+  /* Painel de equipamentos: categorias na lateral esquerda, encaixes na parte
+     de cima e o depósito numa fileira embaixo que rola de lado. O espaço de
+     cima sobra de propósito — é onde cabe a figura da peça mais tarde. */
+  .equipLay { display: flex; gap: 12px; flex: 1; min-height: 0; }
+  .equipCats { flex: 0 0 142px; display: flex; flex-direction: column; gap: 5px;
+               overflow-y: auto; padding-right: 8px;
+               border-right: 1px solid rgba(255,255,255,.09); }
+  .equipCats button { text-align: left; padding: 8px 10px; font-size: 12px; }
+  .equipMain { flex: 1; min-width: 0; min-height: 0;
+               display: flex; flex-direction: column; gap: 8px; }
+  .equipTopo { flex: 1; min-height: 0; overflow-y: auto; padding-right: 6px; }
+  .equipTira { flex: none; border-top: 1px solid rgba(255,255,255,.1); padding-top: 8px; }
+  .tiraCab { display: flex; align-items: center; justify-content: space-between;
+             gap: 10px; flex-wrap: wrap; margin-bottom: 6px; }
+  .tiraItens { display: flex; gap: 8px; overflow-x: auto; overflow-y: hidden;
+               padding-bottom: 6px; }
+  .tiraItens .slot { flex: none; }
   .zonaInv.alvo { outline: 1px dashed #8affd8; outline-offset: 4px; border-radius: 8px; }
   .zonaVenda { margin-top: 12px; padding: 12px 10px; border-radius: 9px; text-align: center;
                font-size: 12px; font-weight: 700; letter-spacing: .1em; cursor: pointer;
@@ -296,7 +312,6 @@
     #botRight { bottom: calc(112px + env(safe-area-inset-bottom));
                 right: calc(6px + env(safe-area-inset-right));
                 max-width: 136px; gap: 4px; padding: 5px; }
-    #dockHint { bottom: calc(118px + env(safe-area-inset-bottom)); font-size: 10.5px; }
 
     /* janelas: uma coluna so, e alvos de toque maiores */
     .box { padding: 14px; width: 96vw; max-height: 90vh; }
@@ -307,6 +322,10 @@
                border-top: 1px solid rgba(255,255,255,.09); }
     .cards { grid-template-columns: 1fr; }
     .slot { width: 74px; height: 74px; }
+    .equipLay { gap: 8px; }
+    .equipCats { flex: 0 0 106px; padding-right: 6px; }
+    .equipCats button { padding: 7px 8px; font-size: 11px; }
+    .zonaInv { min-height: 92px; }
     .slot b { font-size: 11px; }
     button { padding: 8px 12px; }
     button.mini { padding: 6px 9px; font-size: 11px; }
@@ -348,10 +367,23 @@
       background: rgba(8,16,32,.82); border: 1px solid rgba(90,160,230,.32);
       backdrop-filter: blur(6px); }
   body.modoCel.hudAberta #topLeftBtns { flex-direction: column; }
-  body.modoCel #topRight { top: 54px; right: 56px; }
-  body.modoCel #petCard  { top: 108px; left: 8px; }
-  body.modoCel #botRight { top: 152px; right: 8px; bottom: auto;
-                           flex-direction: column; max-width: 132px; align-items: stretch; }
+  /* Com a HUD aberta o jogador está lendo, não voando: os controles saem
+     da frente e cada painel ganha um canto só seu. Antes os botões de menu
+     caíam em cima do painel de créditos e o minimapa ficava atrás dele. */
+  body.modoCel.hudAberta #celJoy,
+  body.modoCel.hudAberta #celFogo,
+  body.modoCel.hudAberta #celAlvo,
+  body.modoCel.hudAberta #abilityBar { display: none !important; }
+
+  body.modoCel #topRight { top: calc(8px + env(safe-area-inset-top));
+                           right: calc(56px + env(safe-area-inset-right));
+                           width: 170px; text-align: right; }
+  body.modoCel #petCard  { top: 176px; left: calc(8px + env(safe-area-inset-left)); }
+  body.modoCel #botRight { top: auto; left: auto;
+                           bottom: calc(10px + env(safe-area-inset-bottom));
+                           right: calc(10px + env(safe-area-inset-right));
+                           flex-direction: row; flex-wrap: wrap;
+                           max-width: 70vw; justify-content: flex-end; align-items: center; }
 
   /* botao que abre a HUD e o resumo permanente de creditos e carga */
   body.modoCel #celMenu { display: flex; position: absolute; z-index: 12;
@@ -497,7 +529,6 @@
 
   <div class="panel" id="saltoBox"><button class="primary" id="btnSalto" onclick="acionarPortal()">Saltar</button></div>
 
-  <div class="panel" id="dockHint"></div>
   <div class="panel" id="abilityBar"></div>
 
   <div class="panel" id="hint">
@@ -4081,6 +4112,8 @@ function desenharRadar() {
   /* no celular o minimapa encolhe e sobe para o alto da direita: la embaixo
      ele caia bem em cima do botao de tiro */
   const emCel = !!window.CEL_ATIVO;
+  // com a HUD aberta o minimapa sairia atrás do painel de créditos
+  if (emCel && document.body.classList.contains("hudAberta")) { radarRect.w = 0; return; }
   const w = emCel ? 136 : 168, h = emCel ? 94 : 116;
   const x = cv.width - w - (emCel ? 10 : 12);
   const y = emCel ? Math.round(cv.height * 0.20) : cv.height - h - 108;
@@ -4610,20 +4643,6 @@ function atualizarHUD() {
     } else sbx.style.display = "none";
   }
 
-  const dh = el("dockHint"), seg = emSeguranca();
-  const revide = G.inimigos.filter(e => G.tempo < e.permitido);
-  if (seg && revide.length) {
-    const resta = Math.ceil((Math.max(...revide.map(e => e.permitido)) - G.tempo) / 1000);
-    dh.style.display = "block";
-    dh.innerHTML = `<span style="color:#ff9a9a">REVIDE ATIVO</span> · ${revide.length} inimigo(s) ` +
-                   `ainda podem te atacar por ${resta}s`;
-  } else if (naBase()) {
-    dh.style.display = "block";
-    dh.innerHTML = `<span style="color:#8affd8">ZONA SEGURA</span> · use o <b>carrinho</b> no canto superior esquerdo para abrir a loja`;
-  } else if (emPortal()) {
-    dh.style.display = "block";
-    dh.innerHTML = `<span style="color:#8affd8">ZONA SEGURA</span> · o portal protege igual à base, e dá para mexer no equipamento aqui também`;
-  } else dh.style.display = "none";
 
   const cb = el("cfgBtn");
   if (cb) {
@@ -5237,39 +5256,41 @@ function quadradoInv(t, id, ctx) {
     <b>${it.nome}</b><span>${textoItem(t, id)}</span></div>`;
 }
 
-/* coluna da direita: o depósito, um quadrado por unidade, agrupado por encaixe */
-/* quadrados por fileira no depósito — muda junto com a largura de .slot no CSS */
-const POR_FILEIRA = 4;
+/* ---- depósito: uma fileira só, que rola de lado, filtrada pela categoria ----
+   Antes era uma coluna à direita com grade de 4 por fileira: no celular
+   sobrava altura para uma fileira e o resto ficava tampado. */
+const CATS_EQUIP = {
+  nave:   [["nave","Nave"],["laser","Canhões"],["lancador","Lança-mísseis"],
+           ["escudo","Escudos"],["motor","Motores"],["modulo","Módulos"]],
+  drones: [["nave","Drones"],["laser","Canhões"],["escudo","Escudos"]],
+  pet:    [["nave","Pet"],["laser","Canhões"],["escudo","Escudos"],["petmod","Módulos de pet"]],
+};
+let catEquip = "nave";
+function catE(id) { catEquip = id; renderEquip(); }
 
-/* espaço vazio do depósito: também serve de área para largar o que você tirar */
-const quadradoVazioInv = () => `<div class="slot"
-  ondragover="event.preventDefault(); this.classList.add('alvo')"
-  ondragleave="this.classList.remove('alvo')"
-  ondrop="this.classList.remove('alvo'); soltarEm({k:'inv'})"
-  title="Espaço livre do depósito"><span>vazio</span></div>`;
-
-/* folga aproveitável quando o destino é um drone (a validação fina é no soltar) */
+/* quanto ainda cabe do item id somando a folga de todos os drones —
+   morava no bloco antigo do depósito e continua sendo usado aqui */
 const folgaDronesMax = id => G.drones.length
   ? Math.max(0, ...G.drones.map((_,di) => folgaDrone(di, id))) : 0;
 
-function colItens(ctx) {
+/* TITULO_CAT lá de cima fala dos encaixes da nave; aqui é o nome da
+   categoria no depósito, que não é a mesma lista */
+const TITULO_DEP = { laser:"Canhões", escudo:"Escudos", motor:"Motores", modulo:"Módulos",
+                     lancador:"Lança-mísseis", petmod:"Módulos de pet" };
+const ROTULO_DEP = { laser:"Adicionar os melhores canhões", escudo:"Adicionar os melhores escudos",
+                     motor:"Adicionar os melhores motores", modulo:"Adicionar módulos",
+                     lancador:"Adicionar os melhores lançadores" };
+
+function colTira(ctx) {
   const paraDrones = ctx === "drones", paraPet = ctx === "pet";
-  const paraNave = !paraDrones && !paraPet;
-  let h = "", total = 0;
-  const titulo = { laser:"Canhões", escudo:"Escudos", motor:"Motores",
-                   modulo:"Módulos", lancador:"Lança-mísseis", petmod:"Módulos de pet" };
-  const rotulo = { laser:"Adicionar os melhores canhões", escudo:"Adicionar os melhores escudos",
-                   motor:"Adicionar os melhores motores", modulo:"Adicionar módulos",
-                   lancador:"Adicionar os melhores lançadores" };
-  const nota   = { escudo:" · vão no encaixe de gerador", motor:" · vão no encaixe de gerador" };
-  // drone aceita canhão e escudo; o pet aceita também os módulos dele
   const tipos = paraDrones ? ["laser","escudo"]
               : paraPet    ? ["laser","escudo","petmod"]
               : ["laser","lancador","escudo","motor","modulo"];
+  // a categoria "nave" não filtra nada: mostra o depósito inteiro
+  const sel = tipos.includes(catEquip) ? [catEquip] : tipos;
 
-  for (const t of tipos) {
-    let quadros = "", n = 0;
-    // depósito também na ordem do mais fraco para o mais forte
+  let quadros = "", n = 0;
+  for (const t of sel) {
     const ids = Object.keys(ITEMS[t]).sort((a,b) => pesoItem(a) - pesoItem(b));
     for (const id of ids) {
       const l = paraDrones ? livres(t,id) + folgaDronesMax(id)
@@ -5277,23 +5298,34 @@ function colItens(ctx) {
               : disponivel(t,id);
       for (let k = 0; k < l; k++) { quadros += quadradoInv(t, id, ctx); n++; }
     }
-    total += n;
-    h += `<div class="secHeadV">
-        <span class="lbl">${titulo[t]} — ${n} ${n === 1 ? "unidade" : "unidades"}${paraNave ? (nota[t] || "") : ""}</span>
-        ${paraNave ? `<button class="mini" onclick="preencherCom('${t}')">${rotulo[t]}</button>` : ""}
-      </div>`;
-    // completa a fileira com quadrados vazios; seção sem nada mostra uma fileira inteira
-    const faltam = n === 0 ? POR_FILEIRA : (POR_FILEIRA - (n % POR_FILEIRA)) % POR_FILEIRA;
-    for (let k = 0; k < faltam; k++) quadros += quadradoVazioInv();
-    h += `<div class="slotGrid">${quadros}</div>`;
   }
-  if (!total) h += `<div class="muted" style="margin-top:6px">Tudo o que você tem está montado. Compre mais na Loja.</div>`;
+  const nome = sel.length === 1 ? TITULO_DEP[sel[0]] : "Depósito inteiro";
+  const encher = (sel.length === 1 && !paraDrones && !paraPet && ROTULO_DEP[sel[0]])
+    ? `<button class="mini" onclick="preencherCom('${sel[0]}')">${ROTULO_DEP[sel[0]]}</button>` : "";
+  const vazio = `<div class="muted" style="padding:16px 4px">Nada nesta categoria.
+    Compre na Loja, ou escolha outra à esquerda.</div>`;
 
-  return `<div class="lbl">Depósito — arraste ou dê dois cliques para montar</div>
-    <div class="zonaInv" ondragover="event.preventDefault(); this.classList.add('alvo')"
+  return `<div class="tiraCab">
+      <span class="lbl">${nome} — ${n} ${n === 1 ? "unidade" : "unidades"} · arraste ou dê dois cliques para montar</span>
+      <div style="display:flex;gap:6px">${encher}
+        <button class="mini danger" onclick="abrirVenda()">Vender itens</button></div>
+    </div>
+    <div class="tiraItens zonaInv" ondragover="event.preventDefault(); this.classList.add('alvo')"
       ondragleave="this.classList.remove('alvo')"
-      ondrop="this.classList.remove('alvo'); soltarEm({k:'inv'})">${h}</div>
-    <div class="zonaVenda" onclick="abrirVenda()">VENDER ITENS</div>`;
+      ondrop="this.classList.remove('alvo'); soltarEm({k:'inv'})">${n ? quadros : vazio}</div>`;
+}
+
+/* categorias na lateral esquerda; o corpo fica com os encaixes em cima */
+function layoutEquip(ctx, topo) {
+  if (!CATS_EQUIP[ctx].some(([id]) => id === catEquip)) catEquip = "nave";
+  const menu = `<div class="equipCats">` + CATS_EQUIP[ctx].map(([id,nome]) =>
+    `<button class="mini ${catEquip === id ? "primary" : ""}" onclick="catE('${id}')">${nome}</button>`
+  ).join("") + `</div>`;
+  return `<div class="equipLay">${menu}
+    <div class="equipMain">
+      <div class="equipTopo">${topo}</div>
+      <div class="equipTira">${colTira(ctx)}</div>
+    </div></div>`;
 }
 
 function renderEquip() {
@@ -5363,9 +5395,9 @@ function renderEquip() {
       mas encaixar, tirar, vender ou reparar só dentro da área da nave-mãe ou de um portal.</div>`);
 
   const corpo =
-    abaEquip === "nave"   ? `<div class="duasCol"><div class="col esq">${colNave()}</div><div class="col dir">${colItens("nave")}</div></div>` :
-    abaEquip === "drones" ? `<div class="duasCol"><div class="col esq">${colDrones()}</div><div class="col dir">${colItens("drones")}</div></div>` :
-    abaEquip === "pet"    ? `<div class="duasCol"><div class="col esq">${colPet()}</div><div class="col dir">${colItens("pet")}</div></div>` :
+    abaEquip === "nave"   ? layoutEquip("nave",   colNave())   :
+    abaEquip === "drones" ? layoutEquip("drones", colDrones()) :
+    abaEquip === "pet"    ? layoutEquip("pet",    colPet())    :
     `<div class="col" style="flex:1">${c}</div>`;
 
   abrirModal(cab + corpo, true);
