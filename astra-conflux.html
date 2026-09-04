@@ -103,9 +103,10 @@
   .abGear:hover svg { transform: rotate(60deg); }
   #dockHint { bottom: 70px; left: 50%; transform: translateX(-50%); display: none;
               text-align: center; font-size: 11.5px; padding: 5px 12px; }
-  #saltoBox { bottom: 104px; left: 50%; transform: translateX(-50%); display: none; padding: 6px 8px;
-              border-color: rgba(255,209,102,.5); }
-  #btnSalto { font-size: 12.5px; padding: 8px 16px; }
+  /* fica ancorado no portal, dentro do mapa, e não no rodapé da tela */
+  #saltoBox { display: none; padding: 5px 6px; border-color: rgba(255,209,102,.55);
+              background: rgba(8,16,32,.9); }
+  #btnSalto { font-size: 12.5px; padding: 7px 18px; }
   #logPanel { bottom: 78px; left: 8px; width: 244px; display: none; max-height: 128px; overflow: hidden; }
   #hint { bottom: 8px; left: 8px; font-size: 10.5px; color: #7b9ac0; max-width: 250px; }
 
@@ -1330,8 +1331,9 @@ const raioSeguro = () => STATION.r + MARGEM_SEGURA;
 
 /* O portal também é zona segura, com as mesmas regras da base: lá dentro
    ninguém pode te atacar, tirando quem você mesmo provocou. */
-const RAIO_SEGURO_PORTAL = 190;
-const PORTAL_TAM = 200;
+const RAIO_SEGURO_PORTAL = 380;   // o dobro do que era
+const PORTAL_TAM = 210;
+const PORTAL_ALT = 198 / 178;     // proporção da figura
 
 function gates() {
   const g = [];
@@ -3671,18 +3673,42 @@ function desenharPortal(g, t) {
   anelSeguro(g.x, g.y, RAIO_SEGURO_PORTAL, t, dist(G.player.x,G.player.y,g.x,g.y) < RAIO_SEGURO_PORTAL);
 
   if (spritePortal.complete && spritePortal.naturalWidth > 0) {
-    const w = PORTAL_TAM, h = w * spritePortal.naturalHeight / spritePortal.naturalWidth;
-    ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(t/(carregando ? 2600 : 9000));
+    const w = PORTAL_TAM, h = w * PORTAL_ALT;
+    /* Balanço lento: ele flutua de leve e oscila um tiquinho, como se
+       estivesse solto no espaço. Dois períodos diferentes para o movimento
+       não ficar com cara de metrônomo. */
+    const sobe  = Math.sin(t/2600 + g.x) * 4.5;
+    const pende = Math.sin(t/3700 + g.x) * 0.035;
+    ctx.save();
+    ctx.translate(g.x, g.y + sobe);
+    ctx.rotate(pende);
     ctx.drawImage(spritePortal, -w/2, -h/2, w, h);
-    ctx.restore();
-    // o miolo acende, e acende mais enquanto carrega
-    const brilho = carregando ? .55 + Math.abs(Math.sin(t/120))*.35 : .18 + Math.abs(Math.sin(t/900))*.14;
-    const gr = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, PORTAL_TAM*0.34);
+
+    /* O giro fica por conta dos anéis de luz por dentro do túnel: como a
+       figura está tombada, eles são elipses, e é o avanço da fase deles que
+       dá a sensação de a parte circular estar rodando. */
     const cor = carregando ? "255,209,102" : ok ? "138,255,216" : "255,122,122";
-    gr.addColorStop(0, `rgba(${cor},${brilho})`);
+    const ritmo = carregando ? 260 : 1500;
+    ctx.globalCompositeOperation = "lighter";
+    ctx.rotate(-0.61);                              // alinha com o eixo do túnel
+    for (let i = 0; i < 3; i++) {
+      const f = ((t/ritmo + i/3) % 1);              // 0 → 1 e recomeça
+      const rx = w*0.30 * (0.45 + f*0.55);
+      const brilho = Math.sin(f*Math.PI) * (carregando ? .85 : .42);
+      ctx.strokeStyle = `rgba(${cor},${brilho.toFixed(3)})`;
+      ctx.lineWidth = carregando ? 4 : 2.5;
+      ctx.beginPath(); ctx.ellipse(0, 0, rx, rx*0.34, 0, 0, 6.29); ctx.stroke();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.restore(); ctx.lineWidth = 1;
+
+    // miolo aceso, mais forte durante a carga
+    const bl = carregando ? .55 + Math.abs(Math.sin(t/120))*.35 : .16 + Math.abs(Math.sin(t/900))*.12;
+    const gr = ctx.createRadialGradient(g.x, g.y + sobe, 0, g.x, g.y + sobe, w*0.30);
+    gr.addColorStop(0, `rgba(${cor},${bl})`);
     gr.addColorStop(1, `rgba(${cor},0)`);
     ctx.fillStyle = gr;
-    ctx.beginPath(); ctx.arc(g.x, g.y, PORTAL_TAM*0.34, 0, 6.29); ctx.fill();
+    ctx.beginPath(); ctx.arc(g.x, g.y + sobe, w*0.30, 0, 6.29); ctx.fill();
   } else {
     ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(t/(carregando ? 300 : 1200));
     for (let i = 0; i < 3; i++) {
@@ -3694,21 +3720,11 @@ function desenharPortal(g, t) {
     ctx.restore(); ctx.globalAlpha = 1; ctx.lineWidth = 1;
   }
 
-  if (carregando) {                      // anel de carga do portal
-    ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 5;
-    ctx.beginPath(); ctx.arc(g.x, g.y, 70, -Math.PI/2, -Math.PI/2 + k*6.283); ctx.stroke();
-    ctx.lineWidth = 1;
-    ctx.font = "700 13px system-ui"; ctx.textAlign = "center"; ctx.fillStyle = "#ffd166";
-    ctx.fillText("CARREGANDO " + ((TEMPO_SALTO - (G.tempo - G.salto.inicio))/1000).toFixed(1) + "s", g.x, g.y - 88);
-  }
-
+  // sem anel de carga e sem contagem: o salto acontece sem alarde
   ctx.font = "600 12px system-ui"; ctx.textAlign = "center";
   ctx.fillStyle = ok ? "#8affd8" : "#ff9a9a";
-  ctx.fillText(alvo.nome + (ok ? "" : " (nível " + alvo.nivel + ")"), g.x, g.y + 78);
-  if (ok && !carregando && G.portalPerto && G.portalPerto.to === g.to) {
-    ctx.fillStyle = "#ffd166";
-    ctx.fillText("use o botão Saltar ou a tecla J", g.x, g.y + 94);
-  }
+  ctx.fillText(alvo.nome + (ok ? "" : " (nível " + alvo.nivel + ")"),
+               g.x, g.y + PORTAL_TAM*PORTAL_ALT*0.5 + 16);
 }
 
 function desenharInvasao(t) {
@@ -4268,18 +4284,22 @@ function atualizarHUD() {
       ganhos.map(g => `<div class="ganhoLinha">${g.html}</div>`).join("");
   } else gpEl.style.display = "none";
 
-  // botão de salto: aparece quando você está em cima de um portal
+  /* Botão de salto: fica em cima do próprio portal, logo acima da figura,
+     e diz só "Saltar". Acompanha a câmera, então gruda no portal na tela. */
   const sbx = el("saltoBox"), bs = el("btnSalto");
   if (sbx && bs) {
-    if (G.salto) {
-      const resta = (G.salto.fim - G.tempo)/1000;
+    const g = G.portalPerto;
+    const ok = g && G.nivel >= SECTORS[g.to].nivel;
+    if (g && !G.salto) {
+      const tre = tremorAtual();
+      const sx = g.x - (G.cam.x + tre.x);
+      const sy = g.y - (G.cam.y + tre.y) - PORTAL_TAM * PORTAL_ALT * 0.5 - 18;
       sbx.style.display = "block";
-      bs.textContent = "Cancelar salto · " + Math.max(0, resta).toFixed(1) + "s";
-    } else if (G.portalPerto) {
-      const alvo = SECTORS[G.portalPerto.to];
-      const ok = G.nivel >= alvo.nivel;
-      sbx.style.display = "block";
-      bs.textContent = ok ? "Saltar para " + alvo.nome : alvo.nome + " · nível " + alvo.nivel;
+      sbx.style.left = sx + "px";
+      sbx.style.top  = sy + "px";
+      sbx.style.bottom = "auto";
+      sbx.style.transform = "translate(-50%, -100%)";
+      bs.textContent = "Saltar";
       bs.disabled = !ok;
     } else sbx.style.display = "none";
   }
