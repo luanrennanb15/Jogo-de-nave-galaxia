@@ -5,6 +5,14 @@
 -->
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Astra Conflux">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#04060f">
+<link rel="apple-touch-icon" href="icone-180.png">
+<link rel="icon" href="icone-180.png">
+<link rel="manifest" href="manifest.webmanifest">
 <title>Astra Conflux</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -334,14 +342,24 @@
   body.modoCel #hint, body.modoCel #logPanel, body.modoCel #gainPanel { display: none !important; }
 
   /* a HUD grande fica guardada; o botao do canto abre e fecha */
-  body.modoCel:not(.hudAberta) #topLeft,
+  body.modoCel:not(.hudAberta) #topLeftInfo,
   body.modoCel:not(.hudAberta) #topRight,
   body.modoCel:not(.hudAberta) #petCard,
   body.modoCel:not(.hudAberta) #botRight { display: none !important; }
 
-  body.modoCel #topLeft  { top: 54px; left: 8px; }
+  /* o carrinho (loja) e a chave (equipamento) ficam sempre a vista:
+     o proprio jogo diz "use o carrinho no canto superior esquerdo" */
+  body.modoCel #topLeft { top: calc(8px + env(safe-area-inset-top));
+      left: calc(8px + env(safe-area-inset-left)); min-width: 0; width: auto;
+      padding: 0; gap: 6px; background: none; border: none;
+      backdrop-filter: none; align-items: flex-start; }
+  body.modoCel #topLeftBtns { flex-direction: row; }
+  body.modoCel.hudAberta #topLeft { width: 208px; padding: 8px 11px;
+      background: rgba(8,16,32,.82); border: 1px solid rgba(90,160,230,.32);
+      backdrop-filter: blur(6px); }
+  body.modoCel.hudAberta #topLeftBtns { flex-direction: column; }
   body.modoCel #topRight { top: 54px; right: 56px; }
-  body.modoCel #petCard  { top: 186px; left: 8px; }
+  body.modoCel #petCard  { top: 108px; left: 8px; }
   body.modoCel #botRight { top: 152px; right: 8px; bottom: auto;
                            flex-direction: column; max-width: 132px; align-items: stretch; }
 
@@ -4129,7 +4147,12 @@ function desenharCaixa(c, t) {
 }
 
 function desenharRadar() {
-  const w = 168, h = 116, x = cv.width - w - 12, y = cv.height - h - 108;
+  /* no celular o minimapa encolhe e sobe para o alto da direita: la embaixo
+     ele caia bem em cima do botao de tiro */
+  const emCel = !!window.CEL_ATIVO;
+  const w = emCel ? 136 : 168, h = emCel ? 94 : 116;
+  const x = cv.width - w - (emCel ? 10 : 12);
+  const y = emCel ? Math.round(cv.height * 0.20) : cv.height - h - 108;
   radarRect.x = x; radarRect.y = y; radarRect.w = w; radarRect.h = h;
 
   // leitura de coordenadas logo acima do minimapa
@@ -6576,15 +6599,19 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
      ~780 unidades contra ~1920 no computador: dai a sensacao de imagem
      cortada. Aqui o buffer passa a ser maior que a tela, entao cabe mais
      mundo e de quebra a imagem fica menos esticada. */
-  let zoomCel = 1.55;
+  let alvoAltura = 560;   // unidades de mundo visiveis na vertical
 
   function redimensionarCel() {
     if (!CEL.ativo) return;
     const lc = cv.clientWidth, ac = cv.clientHeight;
     if (!lc || !ac) return;
-    const larg = Math.round(Math.max(lc, Math.min(lc * zoomCel, 1600)));
+    /* o celular deitado e muito mais largo que alto: mandar pela largura
+       deixava so ~400 unidades de altura, que e o que sufocava a visao */
+    let escala = Math.max(1, Math.min(alvoAltura / ac, 2.6));
+    let larg = Math.round(lc * escala);
+    if (larg > 2200) { larg = 2200; escala = larg / lc; }
     cv.width  = larg;
-    cv.height = Math.round(larg * ac / lc);
+    cv.height = Math.round(ac * escala);
   }
 
   /* resize() original foi registrado por referencia, entao nao da para
@@ -6622,21 +6649,48 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
     window.startGame = function () { entrarTelaCheia(); return comecarOriginal.apply(this, arguments); };
 
   /* muda o zoom sem recarregar: zoomCelular(1.8) mostra mais mundo */
-  window.zoomCelular = function (f) {
-    if (typeof f === "number" && f >= 1 && f <= 3) { zoomCel = f; redimensionarCel(); }
-    return "zoom do celular: " + zoomCel + " (mostrando " + cv.width + " unidades de mundo)";
+  window.visaoCelular = function (n) {
+    if (typeof n === "number" && n >= 300 && n <= 1200) { alvoAltura = n; redimensionarCel(); }
+    return "visao: " + cv.width + " x " + cv.height + " unidades de mundo (alvo de altura " + alvoAltura + ")";
   };
+  window.zoomCelular = window.visaoCelular;
 
   /* liga na mao, para testar no computador: modoCelular(true) */
   window.modoCelular = function (ligar) {
     CEL.ativo = ligar !== false;
     document.body.classList.toggle("modoCel", CEL.ativo);
+    window.CEL_ATIVO = CEL.ativo;
     if (CEL.ativo) { montar(); redimensionarCel(); }
     else { cv.width = cv.clientWidth; cv.height = cv.clientHeight; }
     return CEL.ativo ? "modo celular ligado" : "modo celular desligado";
   };
 
-  function iniciar() { if (ehCelular()) window.modoCelular(true); }
+  /* No iPhone o Safari nao tem API de tela cheia: o unico jeito de sumir
+     com a barra do navegador e adicionar o jogo a tela de inicio. */
+  function comoApp() {
+    return window.navigator.standalone === true ||
+           window.matchMedia("(display-mode: standalone)").matches ||
+           window.matchMedia("(display-mode: fullscreen)").matches;
+  }
+  function ehIOS() {
+    return /iPad|iPhone|iPod/.test(navigator.userAgent) ||
+           (navigator.platform === "MacIntel" && (navigator.maxTouchPoints || 0) > 1);
+  }
+  function dicaTelaCheia() {
+    if (!CEL.ativo || comoApp() || el("celDicaPWA")) return;
+    const box = document.querySelector("#startScreen .box");
+    if (!box) return;
+    const txt = ehIOS()
+      ? 'No iPhone o Safari nao tem tela cheia. Para jogar sem a barra do navegador em cima: toque em <b>Compartilhar</b> e depois em <b>Adicionar a Tela de Inicio</b>. Abrindo pelo icone que aparecer, o jogo ocupa a tela inteira.'
+      : 'Para jogar sem a barra do navegador, use <b>Tela cheia</b> no menu do jogo, ou adicione a pagina a tela de inicio pelo menu do navegador.';
+    box.insertAdjacentHTML("afterbegin", '<div class="avisoBase" id="celDicaPWA">' + txt + '</div>');
+  }
+
+  function iniciar() {
+    if (!ehCelular()) return;
+    window.modoCelular(true);
+    dicaTelaCheia();
+  }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", iniciar);
   else iniciar();
 })();

@@ -1,0 +1,16 @@
+{
+  "name": "Astra Conflux",
+  "short_name": "Astra",
+  "description": "Prototipo de MMO espacial single-player.",
+  "start_url": "./astra-conflux.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "landscape",
+  "background_color": "#04060f",
+  "theme_color": "#04060f",
+  "icons": [
+    { "src": "./icone-180.png", "sizes": "180x180", "type": "image/png" },
+    { "src": "./icone-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
