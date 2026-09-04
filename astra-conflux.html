@@ -1327,13 +1327,22 @@ const invisivel  = () => G.buff.camuflagem > G.tempo || !!(G.player && G.player.
 const STATION = { x: 700, y: 660, r: 260 };
 const MARGEM_SEGURA = 120;
 const raioSeguro = () => STATION.r + MARGEM_SEGURA;
-const emSeguranca = () => dist(G.player.x, G.player.y, STATION.x, STATION.y) < raioSeguro();
+
+/* O portal também é zona segura, com as mesmas regras da base: lá dentro
+   ninguém pode te atacar, tirando quem você mesmo provocou. */
+const RAIO_SEGURO_PORTAL = 190;
+const PORTAL_TAM = 200;
+
 function gates() {
   const g = [];
   if (G.setor > 0) g.push({ x: 400, y: 2000, to: G.setor - 1 });
   if (G.setor < SECTORS.length - 1) g.push({ x: 5200, y: 2000, to: G.setor + 1 });
   return g;
 }
+const emPortal = () => gates().some(g =>
+  dist(G.player.x, G.player.y, g.x, g.y) < RAIO_SEGURO_PORTAL);
+const emSeguranca = () =>
+  dist(G.player.x, G.player.y, STATION.x, STATION.y) < raioSeguro() || emPortal();
 /* ===================== TELA INICIAL, MUNDO E SPAWN ===================== */
 
 (function montarFaccoes() {
@@ -3262,7 +3271,7 @@ function desenharNave(x,y,ang,cor,tam) {
 const SPRITE_NAVE = {
   faisca:     { arq:"nave-faisca.png",     tam: 52, q: 1,  larg:124, alt:120, inv:  1 },
   lamina:     { arq:"nave-lamina.png",     tam: 62, q: 1,  larg:132, alt:102, inv:  1 },
-  sentinela:  { arq:"nave-sentinela.png",  tam: 74, q: 1,  larg:150, alt:121, inv:  1 },
+  sentinela:  { arq:"nave-sentinela.png",  tam: 78, q: 33, larg: 96, alt: 96, inv: -1 },
   devastador: { arq:"nave-devastador.png", tam: 84, q: 33, larg: 96, alt: 84, inv: -1 },
   tita:       { arq:"nave-tita.png",       tam: 92, q: 33, larg:104, alt: 70, inv:  1 },
 };
@@ -3279,8 +3288,12 @@ const spriteDaNave = id => {
 const TITA_TAM = SPRITE_NAVE.tita.tam;         // usado pela luz e pelo rastro
 
 /* O pet e o drone Inovat também vieram de modelo 3D, com um quadro cada. */
-const spritePet = new Image();   spritePet.src   = "pet.png";
-const spriteDrone = new Image(); spriteDrone.src = "drone-inovat.png";
+const spritePortal = new Image(); spritePortal.src = "portal.png";
+
+/* Pet e drones únicos usam uma figura só, girada pelo canvas. */
+const spritePet = new Image();      spritePet.src      = "pet.png";
+const spriteDrone = new Image();    spriteDrone.src    = "drone-inovat.png";
+const spriteHercules = new Image(); spriteHercules.src = "drone-hercules.png";
 
 /* Quanto ela deita na curva: a inclinação persegue a velocidade de giro e
    volta ao zero na reta. Guardado fora do save, é só enfeite. */
@@ -3516,8 +3529,10 @@ function desenharDrones(t) {
 function desenharDrone(x, y, ang, d) {
   const dt = DRONE_TIPOS[d.tipo], nv = droneNivel(d);
   const r = (dt.unico ? 9 : d.tipo === "inovat" ? 7.5 : 6) + nv * 0.35;
-  // o Inovat tem figura própria, vinda do modelo 3D; os outros seguem no vetor
-  const comSprite = d.tipo === "inovat" && spriteDrone.complete && spriteDrone.naturalWidth > 0;
+  // Inovat e Hercules têm figura própria, vinda de modelo 3D; o resto é vetor
+  const fig = d.tipo === "inovat"   ? spriteDrone
+            : d.tipo === "hercules" ? spriteHercules : null;
+  const comSprite = !!fig && fig.complete && fig.naturalWidth > 0;
   ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
 
   // o halo colorido só faz sentido nos desenhados a vetor: no modelo ele
@@ -3529,8 +3544,9 @@ function desenharDrone(x, y, ang, d) {
   }
 
   if (comSprite) {
-    const w = r * 3.4, h = w * spriteDrone.naturalHeight / spriteDrone.naturalWidth;
-    ctx.drawImage(spriteDrone, -w/2, -h/2, w, h);
+    const w = r * (d.tipo === "hercules" ? 3.0 : 3.4);
+    const h = w * fig.naturalHeight / fig.naturalWidth;
+    ctx.drawImage(fig, -w/2, -h/2, w, h);
   } else {
     ctx.beginPath();
     if (dt.unico) {                                // Hercules e Zeus: losango alongado
@@ -3599,19 +3615,26 @@ function desenharInimigo(en, t) {
   }
 }
 
+/* Anel tracejado que marca uma zona segura — o mesmo desenho serve para a
+   estação e para os portais. Acende de leve quando você está dentro. */
+function anelSeguro(x, y, raio, t, dentro) {
+  ctx.save(); ctx.translate(x, y);
+  ctx.globalAlpha = dentro ? .16 : .10; ctx.fillStyle = "#4cc9ff";
+  ctx.beginPath(); ctx.arc(0,0,raio,0,6.29); ctx.fill();
+  ctx.globalAlpha = dentro ? .8 : .55; ctx.strokeStyle = "#7fe0ff"; ctx.lineWidth = 2;
+  ctx.setLineDash([14, 10]); ctx.lineDashOffset = -t/60;
+  ctx.beginPath(); ctx.arc(0,0,raio,0,6.29); ctx.stroke();
+  ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.lineWidth = 1;
+  ctx.restore();
+}
+
 function desenharEstacao(t) {
   const a = t/3000, R = STATION.r, RS = raioSeguro();
 
-  // anel da zona segura
-  ctx.save(); ctx.translate(STATION.x, STATION.y);
-  ctx.globalAlpha = .10; ctx.fillStyle = "#4cc9ff";
-  ctx.beginPath(); ctx.arc(0,0,RS,0,6.29); ctx.fill();
-  ctx.globalAlpha = .55; ctx.strokeStyle = "#7fe0ff"; ctx.lineWidth = 2;
-  ctx.setLineDash([14, 10]); ctx.lineDashOffset = -t/60;
-  ctx.beginPath(); ctx.arc(0,0,RS,0,6.29); ctx.stroke();
-  ctx.setLineDash([]); ctx.globalAlpha = 1;
+  anelSeguro(STATION.x, STATION.y, RS, t, naEstacao());
 
   // estrutura
+  ctx.save(); ctx.translate(STATION.x, STATION.y);
   ctx.rotate(a);
   ctx.strokeStyle = "#5fd0ff"; ctx.lineWidth = 4;
   ctx.beginPath(); ctx.arc(0,0,R,0,6.29); ctx.stroke();
@@ -3644,14 +3667,32 @@ function desenharPortal(g, t) {
   const carregando = G.salto && G.salto.to === g.to;
   const k = carregando ? Math.min(1, (G.tempo - G.salto.inicio) / TEMPO_SALTO) : 0;
 
-  ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(t/(carregando ? 300 : 1200));
-  for (let i = 0; i < 3; i++) {
-    ctx.globalAlpha = (carregando ? .8 : .5) - i*.13;
-    ctx.strokeStyle = carregando ? "#ffd166" : ok ? "#8affd8" : "#ff7a7a";
-    ctx.lineWidth = carregando ? 4 : 3;
-    ctx.beginPath(); ctx.ellipse(0,0,58-i*12,58-i*12,i*.5,0,6.29); ctx.stroke();
+  // anel de zona segura, igual ao da estação
+  anelSeguro(g.x, g.y, RAIO_SEGURO_PORTAL, t, dist(G.player.x,G.player.y,g.x,g.y) < RAIO_SEGURO_PORTAL);
+
+  if (spritePortal.complete && spritePortal.naturalWidth > 0) {
+    const w = PORTAL_TAM, h = w * spritePortal.naturalHeight / spritePortal.naturalWidth;
+    ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(t/(carregando ? 2600 : 9000));
+    ctx.drawImage(spritePortal, -w/2, -h/2, w, h);
+    ctx.restore();
+    // o miolo acende, e acende mais enquanto carrega
+    const brilho = carregando ? .55 + Math.abs(Math.sin(t/120))*.35 : .18 + Math.abs(Math.sin(t/900))*.14;
+    const gr = ctx.createRadialGradient(g.x, g.y, 0, g.x, g.y, PORTAL_TAM*0.34);
+    const cor = carregando ? "255,209,102" : ok ? "138,255,216" : "255,122,122";
+    gr.addColorStop(0, `rgba(${cor},${brilho})`);
+    gr.addColorStop(1, `rgba(${cor},0)`);
+    ctx.fillStyle = gr;
+    ctx.beginPath(); ctx.arc(g.x, g.y, PORTAL_TAM*0.34, 0, 6.29); ctx.fill();
+  } else {
+    ctx.save(); ctx.translate(g.x, g.y); ctx.rotate(t/(carregando ? 300 : 1200));
+    for (let i = 0; i < 3; i++) {
+      ctx.globalAlpha = (carregando ? .8 : .5) - i*.13;
+      ctx.strokeStyle = carregando ? "#ffd166" : ok ? "#8affd8" : "#ff7a7a";
+      ctx.lineWidth = carregando ? 4 : 3;
+      ctx.beginPath(); ctx.ellipse(0,0,58-i*12,58-i*12,i*.5,0,6.29); ctx.stroke();
+    }
+    ctx.restore(); ctx.globalAlpha = 1; ctx.lineWidth = 1;
   }
-  ctx.restore(); ctx.globalAlpha = 1; ctx.lineWidth = 1;
 
   if (carregando) {                      // anel de carga do portal
     ctx.strokeStyle = "#ffd166"; ctx.lineWidth = 5;
@@ -3711,6 +3752,13 @@ function desenharRadar() {
   ctx.strokeStyle = "rgba(127,224,255,.5)"; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.ellipse(x+STATION.x*sx, y+STATION.y*sy, raioSeguro()*sx, raioSeguro()*sy, 0, 0, 6.29); ctx.stroke();
   ctx.fillStyle = "#5fd0ff"; ctx.fillRect(x+STATION.x*sx-3, y+STATION.y*sy-3, 7,7);
+  // os portais também mostram o círculo de zona segura no minimapa
+  for (const g of gates()) {
+    ctx.strokeStyle = "rgba(127,224,255,.4)";
+    ctx.beginPath();
+    ctx.ellipse(x+g.x*sx, y+g.y*sy, RAIO_SEGURO_PORTAL*sx, RAIO_SEGURO_PORTAL*sy, 0, 0, 6.29);
+    ctx.stroke();
+  }
   ctx.fillStyle = "#8affd8";
   for (const g of gates()) ctx.fillRect(x+g.x*sx-2, y+g.y*sy-2, 4,4);
   ctx.fillStyle = "rgba(255,209,102,.85)";
@@ -4246,6 +4294,9 @@ function atualizarHUD() {
   } else if (naEstacao()) {
     dh.style.display = "block";
     dh.innerHTML = `<span style="color:#8affd8">ZONA SEGURA</span> · use o <b>carrinho</b> no canto superior esquerdo para abrir a loja`;
+  } else if (emPortal()) {
+    dh.style.display = "block";
+    dh.innerHTML = `<span style="color:#8affd8">ZONA SEGURA</span> · o portal protege igual à base: ninguém pode te atacar aqui`;
   } else dh.style.display = "none";
 
   const cb = el("cfgBtn");
@@ -5660,12 +5711,12 @@ function openHelp() {
     <div class="row"><div class="val">Configurações</div><div class="muted">a nave tem duas montagens independentes: monte uma de escudo e outra de velocidade, por exemplo. Troque a qualquer momento pela engrenagem no card do piloto ou pela tecla C — cada troca tem 3s de espera antes da próxima. O casco é o mesmo para as duas e não se recupera ao trocar; já o escudo é separado, cada configuração tem o seu e só regenera enquanto está ativa. Os drones também têm duas montagens e trocam junto com a nave. As duas configurações de uma mesma nave dividem as peças, mas o equipamento fica preso àquela nave: para montar em outra, é preciso desmontar ou comprar mais</div></div>
     <div class="row"><div class="val">Cor do laser</div><div class="muted">com todos os encaixes cheios de LF-3 o tiro fica azul; só de LF-4, branco acinzentado</div></div>
     <div class="row"><div class="val">Casco</div><div class="muted">a contagem de 3s corre a partir do último dano, mesmo voando; passados os 3s, basta parar a nave que o reparo começa na hora</div></div>
-    <div class="row"><div class="val">Zona segura</div><div class="muted">dentro do anel ninguém te ataca e você repara de graça — os inimigos circulam por lá, só não podem atirar</div></div>
+    <div class="row"><div class="val">Zona segura</div><div class="muted">dentro do anel ninguém te ataca e você repara de graça — os inimigos circulam por lá, só não podem atirar. Cada portal tem o próprio anel e vale a mesma regra: parado nele você está protegido igual à base</div></div>
     <div class="row"><div class="val">Revide</div><div class="muted">dentro da zona só quem você atacou consegue te acertar, e por 5s depois do seu último tiro nele; qualquer outro inimigo tem o disparo barrado, mesmo os que já estavam no ar. O tiro do pet não estica esse prazo: o inimigo para nos 5s mesmo com ele ainda em cima. O pet, por sua vez, não tem prazo — uma vez engajado ele só larga quando o inimigo morre ou sai do alcance dele</div></div>
     <div class="row"><div class="val">Minimapa</div><div class="muted">clique (ou clique e arraste) no minimapa para viajar até aquele ponto</div></div>
     <div class="row"><div class="val">Morte</div><div class="muted">a tela escurece e mostra quem te abateu: 500 cr para ser resgatado até a base, chegando com casco e escudo zerados e recuperando na doca, ou 1.000 cr para reviver no lugar com metade do casco e metade do escudo da configuração ativa, intocável por 3s</div></div>
     <div class="row"><div class="val">Hangar</div><div class="muted">começa com 1 espaço. No painel Equipamentos, o quadrado com <b>+</b> compra mais um espaço, até 5. Comprando uma nave com o hangar lotado, o jogo pede confirmação e depois mostra as suas naves para você escolher qual sai. Nave repetida não entra</div></div>
-    <div class="row"><div class="val">Visual das naves</div><div class="muted">todas as cinco usam figura pronta em vez do desenho vetorial. A Titã e o Devastador vieram de modelo 3D e têm 33 quadros cada, girando de −45° a +45° sobre o próprio eixo, então a curva é rotação de verdade. A Faísca, a Lâmina e a Sentinela têm uma imagem só, e nelas a inclinação é fingida achatando e cisalhando o sprite na hora. O pet e o drone Inovat também saíram de modelo 3D. Ela deita para o lado enquanto você faz a curva, solta chama pelos motores conforme a velocidade, deixa uma esteira ao acelerar, respira de leve quando está parada e acende quando o escudo apanha. Se algum dos arquivos <b>nave-*.png</b> não estiver na mesma pasta do jogo, aquela nave volta sozinha para o desenho antigo</div></div>
+    <div class="row"><div class="val">Visual das naves</div><div class="muted">todas as cinco usam figura pronta em vez do desenho vetorial. A Titã e o Devastador vieram de modelo 3D e têm 33 quadros cada, girando de −45° a +45° sobre o próprio eixo, então a curva é rotação de verdade. A Faísca, a Lâmina e a Sentinela têm uma imagem só, e nelas a inclinação é fingida achatando e cisalhando o sprite na hora. O pet e os drones Inovat e Hercules também saíram de modelo 3D, com uma figura cada, girada pelo canvas. Ela deita para o lado enquanto você faz a curva, solta chama pelos motores conforme a velocidade, deixa uma esteira ao acelerar, respira de leve quando está parada e acende quando o escudo apanha. Se algum dos arquivos <b>nave-*.png</b> não estiver na mesma pasta do jogo, aquela nave volta sozinha para o desenho antigo</div></div>
     <div class="row"><div class="val">Efeitos visuais</div><div class="muted">o fundo tem nebulosa e estrelas em várias profundidades, que andam em velocidades diferentes, mais um corpo distante por setor. A nave espalha luz em volta e acende os motores; os tiros somam brilho em vez de tapar o fundo. Explosões soltam estilhaços e anéis de choque, e a tela treme conforme a distância do estouro e o tamanho da pancada que você levou. Acelerando, riscos de poeira passam para trás dando a sensação de velocidade. A câmera fica presa na nave: ela só se mexe na tremida</div></div>
     <div class="row"><div class="val">Créditos</div><div class="muted">a figura da Titã foi gerada a partir do modelo <b>Red Goliath Spaceship</b>, de Harold.Llanos no Sketchfab, sob licença CC-BY-4.0</div></div>
     <div class="foot"><button onclick="fecharModal()">Entendi</button></div>`);
