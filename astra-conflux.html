@@ -4,7 +4,7 @@
   Todo o balanceamento está no bloco CONFIG, no início do código JS.
 -->
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Astra Conflux</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -235,6 +235,94 @@
   table.rank tr.me td { color: #ffd166; font-weight: 600; }
   .logline { font-size: 10.5px; color: #8fb0d0; line-height: 1.55; white-space: nowrap;
              overflow: hidden; text-overflow: ellipsis; }
+
+  /* ===================== CELULAR E TELAS ESTREITAS =====================
+     Nada aqui muda o visual no computador: esta tudo dentro de @media.
+     No celular 100vh conta a barra de endereco e corta o rodape da tela,
+     por isso usamos 100dvh, que e a altura de verdade da janela. */
+  @supports (height: 100dvh) { #wrap { height: 100dvh; } }
+
+  /* linha da ajuda que so existe para quem joga no toque */
+  .soToque { display: none; }
+
+  @media (pointer: coarse), (max-width: 820px) {
+    .soToque { display: flex; }
+    #wrap { min-height: 0; }
+    canvas { cursor: default; }
+
+    /* paineis mais enxutos: numa tela de 360px os dois de cima
+       sozinhos ja passavam da largura e se sobrepunham */
+    .panel { padding: 6px 8px; font-size: 11px; border-radius: 7px; }
+    .lbl   { font-size: 9px; }
+    .muted { font-size: 10px; }
+    .bar   { height: 6px; margin: 2px 0 4px; }
+
+    #topLeft { top: calc(6px + env(safe-area-inset-top));
+               left: calc(6px + env(safe-area-inset-left));
+               min-width: 0; width: 174px; gap: 6px; }
+    #topLeftBtns { gap: 5px; }
+    .iconBtn { width: 34px; height: 34px; border-radius: 8px; }
+    .iconBtn svg { width: 15px; height: 15px; }
+    .iconBtn small { font-size: 6.5px; }
+    .cfgBtn { font-size: 10px; padding: 4px 6px; margin-top: 5px; }
+
+    #topRight { top: calc(6px + env(safe-area-inset-top));
+                right: calc(6px + env(safe-area-inset-right));
+                min-width: 0; width: 130px; }
+    #petCard { top: 152px; left: calc(6px + env(safe-area-inset-left)); width: 174px; }
+    #gainPanel { display: none !important; }
+    #logPanel  { display: none !important; }
+    #hint      { display: none !important; }
+
+    #sectorName { top: calc(6px + env(safe-area-inset-top));
+                  font-size: 9px; letter-spacing: .1em; padding: 4px 8px; }
+    #targetPanel { top: 66px; width: 172px; }
+    #eventPanel { top: 124px; font-size: 10.5px; max-width: 78vw; }
+    #toast { top: 96px; }
+    .toastMsg { font-size: 11px; padding: 4px 11px; }
+
+    /* barra de acoes: encosta no rodape, ocupa a largura toda
+       e rola de lado quando nao couberem todos os botoes */
+    #abilityBar { left: calc(6px + env(safe-area-inset-left));
+                  right: calc(6px + env(safe-area-inset-right));
+                  bottom: calc(6px + env(safe-area-inset-bottom));
+                  transform: none; justify-content: flex-start;
+                  gap: 6px; padding: 6px;
+                  overflow-x: auto; overflow-y: hidden; }
+    .ab { width: 44px; height: 44px; font-size: 14px; }
+    .abGear { width: 32px; height: 32px; }
+    .lancIndic { padding: 4px 7px; }
+
+    /* menus sobem para nao brigar com a barra de acoes */
+    #botRight { bottom: calc(112px + env(safe-area-inset-bottom));
+                right: calc(6px + env(safe-area-inset-right));
+                max-width: 136px; gap: 4px; padding: 5px; }
+    #dockHint { bottom: calc(118px + env(safe-area-inset-bottom)); font-size: 10.5px; }
+
+    /* janelas: uma coluna so, e alvos de toque maiores */
+    .box { padding: 14px; width: 96vw; max-height: 90vh; }
+    .box.wide { width: 98vw; height: 94vh; max-height: 94vh; padding: 10px 12px; }
+    .box h1 { font-size: 17px; }
+    .duasCol { flex-direction: column; gap: 10px; }
+    .col.dir { flex: 1 1 auto; border-left: none; padding-left: 0; padding-top: 10px;
+               border-top: 1px solid rgba(255,255,255,.09); }
+    .cards { grid-template-columns: 1fr; }
+    .slot { width: 74px; height: 74px; }
+    .slot b { font-size: 11px; }
+    button { padding: 8px 12px; }
+    button.mini { padding: 6px 9px; font-size: 11px; }
+    .btnX { width: 34px; height: 34px; }
+    .invItem { padding: 9px; }
+    select { max-width: 100%; padding: 5px 7px; font-size: 12px; }
+  }
+
+  /* celular deitado: sobra pouca altura, entao o que e vertical encolhe */
+  @media (pointer: coarse) and (max-height: 460px) {
+    #petCard { top: 138px; }
+    #targetPanel { top: 60px; }
+    #botRight { bottom: calc(104px + env(safe-area-inset-bottom)); }
+    .ab { width: 40px; height: 40px; }
+  }
 </style>
 
 <div id="wrap">
@@ -338,6 +426,7 @@
     <button class="mini" onclick="openClan()">Clã</button>
     <button class="mini" onclick="openMap()">Mapa</button>
     <button class="mini" onclick="openProfile()">Perfil</button>
+    <button class="mini" onclick="openHelp()">Ajuda</button>
     <button class="mini" onclick="toggleFullscreen()">Tela cheia</button>
   </div>
 
@@ -5895,6 +5984,7 @@ function openProfile() {
 /* ---- AJUDA ---- */
 function openHelp() {
   abrirModal(`<h1 style="font-size:18px">COMO JOGAR</h1>
+    <div class="row soToque"><div class="val">No celular</div><div class="muted">tudo se faz no toque: toque no vazio para voar, arraste para a nave seguir o dedo, toque no inimigo para mirar e toque de novo nele para atirar. As teclas citadas abaixo têm todas um espaço equivalente na barra do rodapé — para atacar sem alvo, toque numa munição, que ela mira sozinha no inimigo mais próximo. Vale usar <b>Tela cheia</b> e virar o aparelho de lado</div></div>
     <div class="row"><div class="val">Clique no vazio</div><div class="muted">voa até o ponto</div></div>
     <div class="row"><div class="val">Clique no inimigo</div><div class="muted">seleciona e para o ataque atual; clicar de novo no mesmo começa a atirar nele</div></div>
     <div class="row"><div class="val">Cancelar o tiro</div><div class="muted">apertar de novo a mesma munição na barra interrompe o ataque</div></div>
