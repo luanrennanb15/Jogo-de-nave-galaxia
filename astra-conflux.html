@@ -1326,11 +1326,17 @@ const invisivel  = () => G.buff.camuflagem > G.tempo || !!(G.player && G.player.
 
 /* Estação fixa no canto superior esquerdo, com o dobro do raio antigo.
    Tudo dentro de raioSeguro() é zona segura: ninguém ataca lá dentro. */
-const STATION = { x: 700, y: 660, r: 260 };
+/* Empurrada para a direita: com 1600px de largura ela sobrava 100px por fora
+   da borda esquerda, que é a zona de perigo. Em x=860 a figura inteira cai
+   dentro do mapa, com uns 60px de folga na ponta. */
+const STATION = { x: 860, y: 660, r: 260 };
 const MARGEM_SEGURA = 120;
-/* Zona segura 20% maior do que era, tanto na base quanto no portal. */
+/* Zona segura 20% maior do que era — hoje só o portal usa essa conta. */
 const FOLGA_SEGURA = 1.20;
-const raioSeguro = () => (STATION.r + MARGEM_SEGURA) * FOLGA_SEGURA;
+/* A zona neutra da base tem o tamanho da figura da nave-mãe: ela ocupa
+   1600px de largura, então o raio é 800. Assim a proteção cobre a nave
+   inteira, pontas dos anéis incluídas. */
+const raioSeguro = () => 800;
 
 /* O portal também é zona segura, com as mesmas regras da base: lá dentro
    ninguém pode te atacar, tirando quem você mesmo provocou. */
@@ -3314,8 +3320,8 @@ const spritePortal = new Image(); spritePortal.src = "portal.png";
    gira, só flutua de leve — girar um desenho em perspectiva denunciaria que
    é uma figura chapada. */
 const spriteMae = new Image(); spriteMae.src = "nave-mae.png";
-const MAE_LARG = 640;
-const MAE_ALT  = 397 / 760;       // proporção da figura
+const MAE_LARG = 1600;            // nave-mãe é nave-mãe: ela domina o mapa
+const MAE_ALT  = 835 / 1600;      // proporção da figura
 
 /* Pet e drones únicos usam uma figura só, girada pelo canvas. */
 const spritePet = new Image();      spritePet.src      = "pet.png";
@@ -3406,22 +3412,34 @@ function desenharColeta(t) {
 }
 
 /* Barras de escudo e casco logo acima da nave, e nome + números abaixo. */
+/* Quanto o aviso ZONA NEUTRA está aceso, de 0 a 1. Fica fora do save porque
+   é só enfeite. Ele acende rápido e apaga bem devagar, o que dá aquele
+   sumiço suave quando você deixa a zona em vez de o texto piscar fora. */
+let luzNeutra = 0;
+
 function desenharStatusJogador() {
   const p = G.player, hpMax = maxHp(), shMax = maxShield();
   const w = 64, x0 = p.x - w/2, y0 = p.y - 33;
 
-  /* Aviso flutuando acima da nave sempre que você está protegido, seja na
-     base ou num portal. Fica um pouco acima das barrinhas e pulsa devagar
-     para chamar o olho sem piscar na cara de ninguém. */
-  if (emSeguranca()) {
+  /* Só aparece quando você está protegido de verdade: dentro da base ou de
+     um portal E com ninguém no prazo de revide. Se você atirou em alguém,
+     ele ainda tem 5s para revidar mesmo aí dentro — nesse tempo o aviso
+     some, e ele volta assim que o último prazo vence. */
+  const protegido = emSeguranca() &&
+                    !G.inimigos.some(e => G.tempo < e.permitido);
+  luzNeutra += ((protegido ? 1 : 0) - luzNeutra) * (protegido ? 0.11 : 0.020);
+
+  if (luzNeutra > 0.015) {
     const pulso = 0.72 + Math.abs(Math.sin(G.tempo/700)) * 0.28;
+    const yTxt = y0 - 30;                       // bem acima das barrinhas
     ctx.textAlign = "center";
     ctx.font = "800 12px system-ui";
+    ctx.globalAlpha = luzNeutra;
     ctx.lineWidth = 4; ctx.strokeStyle = "rgba(0,0,0,.75)";
-    ctx.strokeText("ZONA NEUTRA", p.x, y0 - 9);
-    ctx.globalAlpha = pulso;
-    ctx.fillStyle = "#8affd8";
-    ctx.fillText("ZONA NEUTRA", p.x, y0 - 9);
+    ctx.strokeText("ZONA NEUTRA", p.x, yTxt);
+    ctx.globalAlpha = luzNeutra * pulso;
+    ctx.fillStyle = "#ffffff";
+    ctx.fillText("ZONA NEUTRA", p.x, yTxt);
     ctx.globalAlpha = 1; ctx.lineWidth = 1;
   }
 
@@ -3657,42 +3675,18 @@ function desenharInimigo(en, t) {
   }
 }
 
-/* Anel tracejado da zona segura. Hoje só a estação usa: nos portais ele foi
-   tirado porque o círculo grande poluía a tela. A proteção continua igual,
-   só não é mais desenhada. */
-function anelSeguro(x, y, raio, t, dentro) {
-  ctx.save(); ctx.translate(x, y);
-  ctx.globalAlpha = dentro ? .16 : .10; ctx.fillStyle = "#4cc9ff";
-  ctx.beginPath(); ctx.arc(0,0,raio,0,6.29); ctx.fill();
-  ctx.globalAlpha = dentro ? .8 : .55; ctx.strokeStyle = "#7fe0ff"; ctx.lineWidth = 2;
-  ctx.setLineDash([14, 10]); ctx.lineDashOffset = -t/60;
-  ctx.beginPath(); ctx.arc(0,0,raio,0,6.29); ctx.stroke();
-  ctx.setLineDash([]); ctx.globalAlpha = 1; ctx.lineWidth = 1;
-  ctx.restore();
-}
-
 /* A base: a figura da nave-mãe, flutuando de leve. Ela não gira, porque é um
-   desenho em perspectiva fixa — rodar entregaria que é figura chapada. O que
-   se mexe é o balanço, o clarão de fundo e as luzes de baliza piscando. */
+   desenho em perspectiva fixa — rodar entregaria que é figura chapada. Sem
+   clarão azul atrás e sem anel de zona segura desenhado: agora é só a nave
+   contra o espaço. A proteção continua valendo, quem avisa é o texto ZONA
+   NEUTRA em cima da sua nave e o aviso do rodapé. */
 function desenharEstacao(t) {
-  const R = STATION.r, RS = raioSeguro();
+  const R = STATION.r;
+  const w = MAE_LARG, h = w * MAE_ALT;
   const sobe  = Math.sin(t/4200) * 5;
   const pende = Math.sin(t/6100) * 0.012;
 
-  anelSeguro(STATION.x, STATION.y, RS, t, naEstacao());
-
-  // clarão difuso atrás, como se a estrutura acendesse o vácuo em volta
-  const halo = ctx.createRadialGradient(STATION.x, STATION.y + sobe, R*0.1,
-                                        STATION.x, STATION.y + sobe, R*1.25);
-  halo.addColorStop(0, "rgba(90,170,255,.17)");
-  halo.addColorStop(1, "rgba(90,170,255,0)");
-  ctx.fillStyle = halo;
-  ctx.beginPath();
-  ctx.ellipse(STATION.x, STATION.y + sobe, R*1.25, R*0.78, 0, 0, 6.29);
-  ctx.fill();
-
   if (spriteMae.complete && spriteMae.naturalWidth > 0) {
-    const w = MAE_LARG, h = w * MAE_ALT;
     ctx.save();
     ctx.translate(STATION.x, STATION.y + sobe);
     ctx.rotate(pende);
@@ -3818,8 +3812,7 @@ function desenharRadar() {
   ctx.fillStyle = "rgba(6,14,28,.82)"; ctx.strokeStyle = "rgba(110,180,240,.35)"; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.roundRect(x,y,w,h,6); ctx.fill(); ctx.stroke();
   const sx = w/WORLD.w, sy = h/WORLD.h;
-  ctx.strokeStyle = "rgba(127,224,255,.5)"; ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.ellipse(x+STATION.x*sx, y+STATION.y*sy, raioSeguro()*sx, raioSeguro()*sy, 0, 0, 6.29); ctx.stroke();
+  // base: só o quadradinho azul, sem o círculo da zona segura em volta
   ctx.fillStyle = "#5fd0ff"; ctx.fillRect(x+STATION.x*sx-3, y+STATION.y*sy-3, 7,7);
   // portal: só um circulozinho branco pontilhado, sem marcador cheio
   ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1;
@@ -5782,7 +5775,7 @@ function openHelp() {
     <div class="row"><div class="val">Configurações</div><div class="muted">a nave tem duas montagens independentes: monte uma de escudo e outra de velocidade, por exemplo. Troque a qualquer momento pela engrenagem no card do piloto ou pela tecla C — cada troca tem 3s de espera antes da próxima. O casco é o mesmo para as duas e não se recupera ao trocar; já o escudo é separado, cada configuração tem o seu e só regenera enquanto está ativa. Os drones também têm duas montagens e trocam junto com a nave. As duas configurações de uma mesma nave dividem as peças, mas o equipamento fica preso àquela nave: para montar em outra, é preciso desmontar ou comprar mais</div></div>
     <div class="row"><div class="val">Cor do laser</div><div class="muted">com todos os encaixes cheios de LF-3 o tiro fica azul; só de LF-4, branco acinzentado</div></div>
     <div class="row"><div class="val">Casco</div><div class="muted">a contagem de 3s corre a partir do último dano, mesmo voando; passados os 3s, basta parar a nave que o reparo começa na hora</div></div>
-    <div class="row"><div class="val">Zona segura</div><div class="muted">dentro do anel ninguém te ataca e você repara de graça — os inimigos circulam por lá, só não podem atirar. Cada portal também protege num raio de 456px, com a mesma regra da base — só que sem anel desenhado, para não poluir a tela. Estando protegido, aparece <b>ZONA NEUTRA</b> flutuando acima da sua nave, e o aviso no rodapé continua igual</div></div>
+    <div class="row"><div class="val">Zona segura</div><div class="muted">a base protege num raio de 800px, do tamanho da figura da nave-mãe, e cada portal num raio de 456px, com a mesma regra: ninguém te ataca e você repara de graça — os inimigos circulam por lá, só não podem atirar. Nenhum dos dois desenha anel no mapa, para não poluir a tela. Quem avisa é o <b>ZONA NEUTRA</b> em branco flutuando acima da sua nave; ele só acende quando ninguém mais pode te acertar, então some enquanto correr o prazo de revide de alguém que você atacou, e ao sair da zona ele vai apagando devagar em vez de piscar fora</div></div>
     <div class="row"><div class="val">Revide</div><div class="muted">dentro da zona só quem você atacou consegue te acertar, e por 5s depois do seu último tiro nele; qualquer outro inimigo tem o disparo barrado, mesmo os que já estavam no ar. O tiro do pet não estica esse prazo: o inimigo para nos 5s mesmo com ele ainda em cima. O pet, por sua vez, não tem prazo — uma vez engajado ele só larga quando o inimigo morre ou sai do alcance dele</div></div>
     <div class="row"><div class="val">Minimapa</div><div class="muted">clique (ou clique e arraste) no minimapa para viajar até aquele ponto</div></div>
     <div class="row"><div class="val">Morte</div><div class="muted">a tela escurece e mostra quem te abateu: 500 cr para ser resgatado até a base, chegando com casco e escudo zerados e recuperando na doca, ou 1.000 cr para reviver no lugar com metade do casco e metade do escudo da configuração ativa, intocável por 3s</div></div>
