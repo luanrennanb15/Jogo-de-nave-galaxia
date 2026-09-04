@@ -3925,12 +3925,34 @@ function desenharDrones(t) {
 
   for (let i = 0; i < G.drones.length; i++) {
     const f = alvos[i]; if (!f) continue;
-    const tx = p.x + f.fx*cos - f.fy*sin;
-    const ty = p.y + f.fx*sin + f.fy*cos;
-    if (!dronePos[i]) dronePos[i] = { x: tx, y: ty };
-    dronePos[i].x += (tx - dronePos[i].x) * 0.22;
-    dronePos[i].y += (ty - dronePos[i].y) * 0.22;
-    desenharDrone(dronePos[i].x, dronePos[i].y, p.ang, G.drones[i]);
+    /* balanço de leve, com fase própria por drone: parados, eles respiram
+       em vez de ficarem cravados no lugar */
+    const balanco = Math.sin(t/620 + i*1.9) * 2.2;
+    const fy = f.fy + balanco;
+    const tx = p.x + f.fx*cos - fy*sin;
+    const ty = p.y + f.fx*sin + fy*cos;
+
+    let d0 = dronePos[i];
+    if (!d0) {
+      /* cada um persegue a formação num ritmo um pouco diferente, senão os
+         dez se mexem como uma peça só */
+      d0 = dronePos[i] = { x: tx, y: ty, ang: p.ang, atraso: 0.15 + (i % 5) * 0.018 };
+    }
+    if (d0.ang == null) { d0.ang = p.ang; d0.atraso = 0.15 + (i % 5) * 0.018; }
+
+    const x0 = d0.x, y0 = d0.y;
+    d0.x += (tx - d0.x) * d0.atraso;
+    d0.y += (ty - d0.y) * d0.atraso;
+
+    /* O nariz segue o próprio deslocamento, não o da nave. Numa curva o drone
+       abre para fora, e é isso que dá o atraso natural — antes ele girava no
+       mesmo quadro que você, e parecia soldado na lateral. Quase parado, ele
+       volta a se alinhar com a nave. */
+    const vx = d0.x - x0, vy = d0.y - y0;
+    const alvoAng = Math.hypot(vx, vy) > 0.35 ? Math.atan2(vy, vx) : p.ang;
+    d0.ang = anguloSuave(d0.ang, alvoAng, 0.11);
+
+    desenharDrone(d0.x, d0.y, d0.ang, G.drones[i]);
   }
   if (dronePos.length > G.drones.length) dronePos.length = G.drones.length;
 }
@@ -4818,11 +4840,41 @@ const ABAS_EQUIP = [["nave","Nave e equipamento"],["drones","Drones"],["pet","Pe
 const barraAbas = (abas, atual, fn) => `<div class="tabs">` + abas.map(([id,n]) =>
   `<button class="mini ${atual === id ? "primary" : ""}" onclick="${fn}('${id}')">${n}</button>`).join("") + `</div>`;
 function abaE(id) { abaEquip = id; renderEquip(); }
-function abrirModal(html, largo) {
+/* Comprar ou equipar redesenha o painel inteiro, e com isso a rolagem
+   voltava para o topo — você descia até um item lá embaixo, clicava, e a
+   lista pulava para o começo. Aqui a posição de cada área rolável é guardada
+   antes de trocar o conteúdo e devolvida depois. Só vale quando o painel
+   redesenhado é o mesmo de antes; abrir outro painel começa do topo. */
+const ROLAVEIS = ".col, .equipTopo, .equipTira, .tiraItens, .equipCats, .zonaInv, .slotGrid";
+let modalChave = null;
+
+function guardarRolagem(raiz) {
+  const m = [[-1, raiz.scrollTop, raiz.scrollLeft]];
+  raiz.querySelectorAll(ROLAVEIS).forEach((e,i) => {
+    if (e.scrollTop || e.scrollLeft) m.push([i, e.scrollTop, e.scrollLeft]);
+  });
+  return m;
+}
+function devolverRolagem(raiz, m) {
+  const els = raiz.querySelectorAll(ROLAVEIS);
+  for (const [i, t, l] of m) {
+    const e = i === -1 ? raiz : els[i];
+    if (!e) continue;
+    if (t) e.scrollTop = t;
+    if (l) e.scrollLeft = l;
+  }
+}
+
+function abrirModal(html, largo, chave) {
   const b = el("modalBox");
+  const mesmo = chave != null && chave === modalChave &&
+                !el("modal").classList.contains("hidden");
+  const guardado = mesmo ? guardarRolagem(b) : null;
+  modalChave = chave != null ? chave : null;
   b.className = "box" + (largo ? " wide" : "");
   b.innerHTML = html;
   el("modal").classList.remove("hidden");
+  if (guardado) devolverRolagem(b, guardado);
 }
 function fecharModal() { el("modal").classList.add("hidden"); }
 /* Atracado. A área de mexer no equipamento é a mesma da zona neutra: a
@@ -5162,7 +5214,7 @@ function renderLoja() {
     <div class="equipMain">
       <div class="equipTopo">${detalheLoja()}</div>
       <div class="equipTira"><div class="tiraItens">${prateleira}</div></div>
-    </div></div>`, true);
+    </div></div>`, true, "loja");
 }
 
 /* ===================== EQUIPAMENTOS ===================== */
@@ -5549,7 +5601,7 @@ function renderEquip() {
     abaEquip === "pet"    ? `<div class="duasCol"><div class="col esq">${colPet()}</div><div class="col dir">${colItens("pet")}</div></div>` :
     `<div class="col" style="flex:1">${c}</div>`;
 
-  abrirModal(cab + corpo, true);
+  abrirModal(cab + corpo, true, "equip");
 }
 
 
