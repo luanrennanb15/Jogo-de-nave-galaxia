@@ -1,0 +1,144 @@
+﻿DOCUMENTO DE NAVES INIMIGAS NORMAIS
+Astra Conflux — tabela de inimigos
+-------------------------------------------grau 1 dificuldade
+nome: Drone Errante
+casco: 1.000
+escudo: 1.000
+dano: 30
+velocidade: 1.7
+distancia: 340
+locacao que fica do mapa: Setor 1 —(35 por vez) · Setor 2 —(15 por vez)
+XP: 400
+Honra: 2
+Creditos: 400
+drop: 1 a 2 de Titânio
+observacoes: passivo — so revida se voce atirar · figura 3D: errante
+-------------------------------------------grau 2 dificuldade
+nome: Sonda Corrosiva
+casco: 2.000
+escudo: 2.000
+dano: 80
+velocidade: 2.4
+distancia: 360
+locacao que fica do mapa: Setor 2 —(15 por vez), Setor 3 — (10 por vez),Setor 4 — (10 por vez)
+XP: 800
+Honra: 4
+Creditos: 800
+drop: 2 a 4 de Titânio · 0 a 1 de Plasma
+observacoes: figura 3D: sonda
+-------------------------------------------grau 3 dificuldade
+nome: Corsário
+casco: 6.000
+escudo: 6.000
+dano: 200
+velocidade: 2.4
+distancia: 400
+locacao que fica do mapa: Setor 3 (10 por vez), Setor 4 (10 por vez)
+XP: 1.600 
+Honra:8
+Creditos: 1.600 
+drop: 2 a 5 de Titânio · 1 a 3 de Plasma
+observacoes: ainda sem figura 3D — desenhado como poligono
+------------------------------------------- grau 4 dificuldade
+nome: Predador
+casco: 20.000
+escudo: 10.000
+dano: 390
+velocidade: 2.0
+distancia: 430
+locacao que fica do mapa: Setor 3 (8 por vez) · Setor 4 (10 por vez)
+XP: 3.200 
+Honra: 16
+Creditos: 6.400
+drop: 2 a 5 de Plasma · 0 a 1 de Cristal de Vórtice
+observacoes: ainda sem figura 3D — desenhado como poligono
+------------------------------------------- grau 5 dificuldade
+nome: Ceifador
+casco: 100.000
+escudo: 100.000
+dano: 1.200
+velocidade: 2.1
+distancia: 470
+locacao que fica do mapa: Setor 3 (6 por vez)
+XP: 6.400 
+Honra: 32
+Creditos: 51.200 
+drop: 3 a 7 de Plasma · 1 a 3 de Cristal de Vórtice
+observacoes: ainda sem figura 3D — desenhado como poligono
+------------------------------------------- grau 6 dificuldade
+nome: DEVORADOR
+casco: 200.000
+escudo: 200.000
+dano: 2.650
+velocidade: 1.9
+distancia: 520
+locacao que fica do mapa: Setor 4 (6 por vez)
+XP: 12.800 
+Honra: 64
+Creditos: 102.400 
+drop: 8 a 14 de Plasma · 6 a 12 de Cristal de Vórtice
+observacoes: CHEFE · ainda sem figura 3D — desenhado como poligono
+------------------------------------------- grau 7 dificuldade
+nome: Colosso de Ferro
+casco: 450.000
+escudo: 220.000
+dano: 900
+velocidade: 2.2
+distancia: 560
+locacao que fica do mapa: Setor 6 — Forja de Ferro (7 por vez)
+XP: 26.000
+Honra: 
+Creditos: 380.000
+drop: 10 a 18 de Plasma · 3 a 7 de Cristal de Vórtice
+observacoes: ainda sem figura 3D — desenhado como poligono
+------------------------------------------- grau 8 dificuldade
+nome: Aberração
+casco: 820.000
+escudo: 400.000
+dano: 1400
+velocidade: 2.6
+distancia: 600
+locacao que fica do mapa: Setor 6 — Forja de Ferro (4 por vez)
+XP: 48.000
+Honra: 
+Creditos: 640.000
+drop: 6 a 12 de Cristal de Vórtice · 12 a 20 de Plasma
+observacoes: ainda sem figura 3D — desenhado como poligono
+-------------------------------------------grau 9 dificuldade
+nome: ANIQUILADOR
+casco: 2.600.000
+escudo: 1.200.000
+dano: 2200
+velocidade: 2
+distancia: 680
+locacao que fica do mapa: Setor 6 — Forja de Ferro (1 por vez)
+XP: 180.000
+Honra: 
+Creditos: 2.400.000
+drop: 25 a 45 de Cristal de Vórtice · 30 a 60 de Plasma
+observacoes: CHEFE · ainda sem figura 3D — desenhado como poligono
+-------------------------------------------
+
+
+SETORES, PARA REFERENCIA
+
+Setor 1 — Órbita Baixa
+  nivel minimo: 1
+  pilotos inimigos (zona contestada): nenhum
+  monstros: 35x Drone Errante
+
+Setor 2 — Cinturão de Ferro
+  nivel minimo: 3
+
+Setor 3 — Nebulosa Escarlate
+  nivel minimo: 6
+
+Setor 4 — Fenda de Kryon
+  nivel minimo: 10
+
+Setor 5 — Núcleo Sombrio
+  nivel minimo: 15
+
+Setor 6 — Forja de Ferro
+  nivel minimo: 20
+
