@@ -850,8 +850,8 @@ const ENEMIES = {
   aniquilador:{ nome:"ANIQUILADOR",    hp:400000, shield:300000, dmg:4450, speed:2.3, range:680, xp:51200, cred:409600, honra:256, raio:58, cor:"#ff3b6b", passivo:true, boss:true, drop:{ cristal:[25,45], plasma:[30,60] } },
   /* Cruzziun não atira: dano 0, quase parado, casco enorme. Ele é um alvo
      fixo guardado pelos Protetores, que só saem quando ele apanha. */
-  cruzziun: { nome:"Cruzziun",        hp:1600000, shield:1200000, dmg:0,    speed:0.6, range:680, xp:536200, cred:1638400, honra:4096, raio:64, cor:"#c66bff", passivo:true, boss:true, drop:{ cristal:[25,45], plasma:[30,60] } },
-  protetor: { nome:"Protetor",        hp:50000,   shield:40000,   dmg:1500, speed:3.6, range:680, xp:6400,   cred:12800,   honra:32,   raio:22, cor:"#ff9d4d", boss:true, drop:{ cristal:[25,45], plasma:[30,60] } },
+  cruzziun: { nome:"Cruzziun",        hp:1600000, shield:1200000, dmg:0,    speed:0.6, range:680, xp:536200, cred:1638400, honra:4096, raio:82.18, cor:"#c66bff", passivo:true, boss:true, sprite:"cruzziun", drop:{ cristal:[25,45], plasma:[30,60] } },
+  protetor: { nome:"Protetor",        hp:50000,   shield:40000,   dmg:1500, speed:3.6, range:680, xp:6400,   cred:12800,   honra:32,   raio:16.37, cor:"#ff9d4d", boss:true, sprite:"protetor", drop:{ cristal:[25,45], plasma:[30,60] } },
   /* Dicimulus é o primeiro inimigo com dois ataques: o tiro normal e um
      míssil bem mais forte, num ritmo próprio. Ver o campo `missil`. */
   dicimulus:{ nome:"Dicimulus",        hp:40000,  shield:30000,  dmg:1000, speed:2.5, range:680, xp:6000,  cred:12000,  honra:30,  raio:34, cor:"#ffd166", passivo:true, boss:true,
@@ -3878,11 +3878,11 @@ function desenharNave(x,y,ang,cor,tam) {
    já no da tela — e nesses dois casos o mesmo ângulo sai espelhado. Em vez de
    renderizar tudo de novo, cada tira diz para que lado ela conta. */
 const SPRITE_NAVE = {
-  faisca:     { arq:"nave-faisca.png",     tam: 60, q: 33, larg:120, alt: 84, inv:  1 },
-  lamina:     { arq:"nave-lamina.png",     tam: 62, q: 33, larg:120, alt: 92, inv:  1 },
-  sentinela:  { arq:"nave-sentinela.png",  tam: 78, q: 33, larg: 96, alt: 96, inv: -1 },
-  devastador: { arq:"nave-devastador.png", tam: 84, q: 33, larg: 96, alt: 84, inv: -1 },
-  tita:       { arq:"nave-tita.png",       tam: 92, q: 33, larg:104, alt: 70, inv:  1 },
+  faisca:     { arq:"nave-faisca.png",     tam: 63, q: 33, larg:120, alt: 84, inv:  1 },
+  lamina:     { arq:"nave-lamina.png",     tam: 65.1, q: 33, larg:120, alt: 92, inv:  1 },
+  sentinela:  { arq:"nave-sentinela.png",  tam: 81.9, q: 33, larg: 96, alt: 96, inv: -1 },
+  devastador: { arq:"nave-devastador.png", tam: 88.2, q: 33, larg: 96, alt: 84, inv: -1 },
+  tita:       { arq:"nave-tita.png",       tam: 96.6, q: 33, larg:104, alt: 70, inv:  1 },
 };
 for (const id in SPRITE_NAVE) {
   const s = SPRITE_NAVE[id];
@@ -3924,6 +3924,8 @@ const SPRITE_INIMIGO = {
   predador: { arq:"inimigo-predador.png", larg:116, alt: 46, tam:4.4 },
   ceifador: { arq:"inimigo-ceifador.png", larg:124, alt: 60, tam:4.0 },
   devorador:{ arq:"inimigo-devorador.png",larg:150, alt:120, tam:3.4 },
+  cruzziun: { arq:"inimigo-cruzziun.png", larg:190, alt: 98, tam:5.2 },
+  protetor: { arq:"inimigo-protetor.png", larg:120, alt: 91, tam:4.2 },
 };
 for (const id in SPRITE_INIMIGO) {
   const s = SPRITE_INIMIGO[id];
