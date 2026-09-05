@@ -840,25 +840,42 @@ const ENEMIES = {
   sonda:    { nome:"Sonda Corrosiva", hp:2000, shield:2000, dmg:80, speed:2.4, range:360, xp:800,  cred:800,   honra:4, raio:17, cor:"#6fc8e0", sprite:"sonda", drop:{ titanio:[2,4], plasma:[0,1] } },
   corsario: { nome:"Corsário",        hp:6000, shield:6000, dmg:200, speed:2.4, range:400, xp:1600, cred:1600, honra:8, raio:18, cor:"#ffb050", sprite:"corsario", drop:{ titanio:[2,5], plasma:[1,3] } },
   predador: { nome:"Predador",        hp:20000, shield:10000, dmg:390, speed:2.0, range:430, xp:3200, cred:6400, honra:16, raio:22, cor:"#ff6b6b", sprite:"predador", drop:{ plasma:[2,5], cristal:[0,1] } },
-  ceifador: { nome:"Ceifador",        hp:100000, shield:100000, dmg:1200, speed:2.1, range:470, xp:6400, cred:51200, honra:32, raio:27, cor:"#c66bff", drop:{ plasma:[3,7], cristal:[1,3] } },
-  devorador:{ nome:"DEVORADOR",       hp:200000, shield:200000, dmg:2650, speed:1.9, range:520, xp:12800, cred:102400, honra:64, raio:46, cor:"#ff3b6b", drop:{ plasma:[8,14], cristal:[6,12] }, boss:true },
+  ceifador: { nome:"Ceifador",        hp:100000, shield:100000, dmg:1200, speed:2.1, range:470, xp:6400, cred:51200, honra:32, raio:27, cor:"#c66bff", sprite:"ceifador", drop:{ plasma:[3,7], cristal:[1,3] } },
+  devorador:{ nome:"DEVORADOR",       hp:200000, shield:200000, dmg:2650, speed:1.9, range:520, xp:12800, cred:102400, honra:64, raio:46, cor:"#ff3b6b", sprite:"devorador", drop:{ plasma:[8,14], cristal:[6,12] }, boss:true },
 
-  /* Setor 6 — feito para testar naves grandes de verdade */
-  colosso:  { nome:"Colosso de Ferro", hp:450000,  shield:220000, dmg:900,  speed:2.2, range:560, xp:26000, cred:380000,   raio:34, cor:"#9fb4c8", drop:{ plasma:[10,18], cristal:[3,7] } },
-  aberracao:{ nome:"Aberração",        hp:820000,  shield:400000, dmg:1400, speed:2.6, range:600, xp:48000, cred:640000,   raio:38, cor:"#b06bff", drop:{ cristal:[6,12], plasma:[12,20] } },
-  aniquilador:{ nome:"ANIQUILADOR",    hp:2600000, shield:1200000,dmg:2200, speed:2.0, range:680, xp:180000,cred:2400000,  raio:58, cor:"#ff3b6b", drop:{ cristal:[25,45], plasma:[30,60] }, boss:true },
+  /* Setores 5 a 8 */
+  colosso:  { nome:"Colosso de Ferro", hp:40000,  shield:40000,  dmg:3200, speed:2.6, range:560, xp:3200,  cred:12800,  honra:16,  raio:34, cor:"#9fb4c8", drop:{ plasma:[10,18], cristal:[3,7] } },
+  aberracao:{ nome:"Aberração",        hp:300000, shield:200000, dmg:3600, speed:2.3, range:600, xp:25600, cred:204800, honra:128, raio:38, cor:"#b06bff", passivo:true, drop:{ cristal:[6,12], plasma:[12,20] } },
+  alquimin: { nome:"ALQUIMIN",         hp:50000,  shield:40000,  dmg:1650, speed:2.8, range:680, xp:6400,  cred:12800,  honra:32,  raio:30, cor:"#8affd8", boss:true, drop:{ cristal:[25,45], plasma:[30,60] } },
+  aniquilador:{ nome:"ANIQUILADOR",    hp:400000, shield:300000, dmg:4450, speed:2.3, range:680, xp:51200, cred:409600, honra:256, raio:58, cor:"#ff3b6b", passivo:true, boss:true, drop:{ cristal:[25,45], plasma:[30,60] } },
+  /* Cruzziun não atira: dano 0, quase parado, casco enorme. Ele é um alvo
+     fixo guardado pelos Protetores, que só saem quando ele apanha. */
+  cruzziun: { nome:"Cruzziun",        hp:1600000, shield:1200000, dmg:0,    speed:0.6, range:680, xp:536200, cred:1638400, honra:4096, raio:82.18, cor:"#c66bff", passivo:true, boss:true, sprite:"cruzziun", drop:{ cristal:[25,45], plasma:[30,60] } },
+  protetor: { nome:"Protetor",        hp:50000,   shield:40000,   dmg:1500, speed:3.6, range:680, xp:6400,   cred:12800,   honra:32,   raio:16.37, cor:"#ff9d4d", boss:true, sprite:"protetor", drop:{ cristal:[25,45], plasma:[30,60] } },
+  /* Dicimulus é o primeiro inimigo com dois ataques: o tiro normal e um
+     míssil bem mais forte, num ritmo próprio. Ver o campo `missil`. */
+  dicimulus:{ nome:"Dicimulus",        hp:40000,  shield:30000,  dmg:1000, speed:2.5, range:680, xp:6000,  cred:12000,  honra:30,  raio:34, cor:"#ffd166", passivo:true, boss:true,
+              missil:{ dano:3000, cd:3000, cor:"#ff8a3d" }, drop:{ cristal:[25,45], plasma:[30,60] } },
 };
 
+/* Nove mapas em fila: 1, 2, 3, 4, o de PvP, e depois 5 a 8. O campo `rot` é
+   o rótulo mostrado na tela — sem ele o mapa de PvP empurraria a numeração e
+   o "Setor 5" do documento apareceria como 6. A nave-mãe só existe no
+   primeiro; nos outros, quem protege são os portais. */
 const SECTORS = [
-  { nome:"Órbita Baixa",       nivel:1,  cor:"#0d1b33", pvp:0,    spawn:{ drone:35 } },
-  { nome:"Cinturão de Ferro",  nivel:3,  cor:"#221a2e", pvp:0,    spawn:{ sonda:15, drone:15 } },
-  { nome:"Nebulosa Escarlate", nivel:6,  cor:"#2b1420", pvp:2,    spawn:{ sonda:10, corsario:10, predador:8, ceifador:6 } },
-  { nome:"Fenda de Kryon",     nivel:10, cor:"#141f2e", pvp:3,    spawn:{ sonda:10, corsario:10, predador:10, devorador:6 } },
-  /* Setor 5 sem monstros de propósito: é passagem e zona de PvP, o farm
-     vem dos 4 pilotos inimigos que rondam ali. */
-  { nome:"Núcleo Sombrio",     nivel:15, cor:"#1c0f18", pvp:4,    spawn:{} },
-  { nome:"Forja de Ferro",     nivel:20, cor:"#2a1608", pvp:5,    spawn:{ colosso:7, aberracao:4, aniquilador:1 } },
+  { rot:"1",   nome:"Órbita Baixa",         nivel:1,  cor:"#0d1b33", pvp:0, spawn:{ drone:35 } },
+  { rot:"2",   nome:"Cinturão de Ferro",    nivel:3,  cor:"#221a2e", pvp:0, spawn:{ sonda:15, drone:15 } },
+  { rot:"3",   nome:"Nebulosa Escarlate",   nivel:6,  cor:"#2b1420", pvp:2, spawn:{ sonda:10, corsario:10, predador:8, ceifador:6 } },
+  { rot:"4",   nome:"Fenda de Kryon",       nivel:10, cor:"#141f2e", pvp:3, spawn:{ sonda:10, corsario:10, predador:10, devorador:6 } },
+  /* Mapa de guerra: nenhum monstro, só pilotos das outras facções. */
+  { rot:"PvP", nome:"Fronteira Contestada", nivel:14, cor:"#2e1212", pvp:7, spawn:{} },
+  { rot:"5",   nome:"Núcleo Sombrio",       nivel:16, cor:"#1c0f18", pvp:4, spawn:{ colosso:20, aberracao:15 } },
+  { rot:"6",   nome:"Forja de Ferro",       nivel:20, cor:"#2a1608", pvp:5, spawn:{ alquimin:12, aniquilador:12 } },
+  { rot:"7",   nome:"Campo de Destroços",   nivel:25, cor:"#221f14", pvp:5, spawn:{ alquimin:20, aniquilador:20 } },
+  { rot:"8",   nome:"Limiar do Vazio",      nivel:30, cor:"#120a1e", pvp:6, spawn:{ dicimulus:30 } },
 ];
+/* rótulo do setor, para não escrever G.setor+1 espalhado pelo código */
+const rotSetor = i => (SECTORS[i] && SECTORS[i].rot) || String(i + 1);
 
 const UPGRADES = [
   { id:"laser",  nome:"Calibragem de Canhão", desc:"+12% de dano por nível",             base:9000, max:8 },
@@ -1699,6 +1716,9 @@ const FOLGA_SEGURA = 1.20;
    1600px de largura, então o raio é 800. Assim a proteção cobre a nave
    inteira, pontas dos anéis incluídas. */
 const raioSeguro = () => 800;
+/* A nave-mãe existe só no primeiro mapa. Nos outros quem protege, repara e
+   deixa mexer no equipamento são os portais. */
+const TEM_BASE = () => G.setor === 0;
 
 /* O portal também é zona segura, com as mesmas regras da base: lá dentro
    ninguém pode te atacar, tirando quem você mesmo provocou. */
@@ -1718,7 +1738,7 @@ function gates() {
 const emPortal = () => gates().some(g =>
   dist(G.player.x, G.player.y, g.x, g.y) < RAIO_SEGURO_PORTAL);
 const emSeguranca = () =>
-  dist(G.player.x, G.player.y, STATION.x, STATION.y) < raioSeguro() || emPortal();
+  (TEM_BASE() && dist(G.player.x, G.player.y, STATION.x, STATION.y) < raioSeguro()) || emPortal();
 /* ===================== TELA INICIAL, MUNDO E SPAWN ===================== */
 
 (function montarFaccoes() {
@@ -1774,10 +1794,61 @@ function iniciarSetor(estado) {
   G.coleta = null; G.salto = null; G.saltoAlvo = null; G.portalPerto = null;
   G.proxCaixa = G.tempo + 2000;
   for (const [tipo, qtd] of Object.entries(s.spawn)) for (let i = 0; i < qtd; i++) spawnAlien(tipo);
+  // os quatro Cruzziun não são sorteados: cada um tem o seu ponto
+  if (G.setor === CRUZZIUN_SETOR) {
+    G.cruzMortos = {};                       // quando cada ponto volta a nascer
+    for (const pt of CRUZZIUN_PONTOS) nascerCruzziun(pt);
+  }
   for (let i = 0; i < s.pvp; i++) spawnPiloto();
   for (let i = 0; i < 5; i++) spawnCaixa();
   gerarEstrelas();
 }
+
+/* ---------------- Cruzziun e a guarda dele ----------------
+   Quatro Cruzziun parados em pontos fixos do Setor 6. Ele não ataca; quem
+   briga são os Protetores, que só saem quando o chefe leva dano. Morto o
+   chefe, a guarda ainda persegue por um minuto e então se desfaz sozinha —
+   a explosão é só efeito, não fere ninguém. */
+const CRUZZIUN_SETOR   = 6;                    // índice: o rótulo "6" da lista
+const CRUZZIUN_PONTOS  = [ { x:3721, y:1067 }, { x:1951, y:1415 },
+                           { x:1979, y:3142 }, { x:3981, y:2755 } ];
+const CRUZZIUN_RENASCE = 10*60*1000;           // 10 minutos depois de morrer
+const PROTETOR_GRUPO   = [20, 30];             // quantos saem por chefe
+/* Faixa de ronda da guarda, medida do chefe. A banda é larga de propósito:
+   é ela que espalha a formação em vez de virar um anel colado no chefe. */
+const PROTETOR_PERTO   = 260;                  // ninguém ronda mais perto que isso
+const PROTETOR_LONGE   = 820;                  // nem mais longe que isso
+const PROTETOR_ALERTA  = 10000;                // fica de sobreaviso 10s depois do último tiro
+const PROTETOR_DESISTE = 1200;                 // longe o bastante para eles baixarem a guarda
+const PROTETOR_RECUO   = 0.45;                 // e voltarem devagar para o anel
+const PROTETOR_LUTO    = 60*1000;              // seguem brigando 1 min após a morte dele
+const PROTETOR_REPOE   = 4000;                 // com o chefe vivo, a guarda se repõe
+
+function nascerCruzziun(ponto) {
+  const e = criarInimigo(ENEMIES.cruzziun, "cruzziun", ponto.x, ponto.y);
+  e.ponto = ponto;            // ele guarda o lugar: dx/dy nunca mudam
+  e.dx = ponto.x; e.dy = ponto.y;
+  e.guardaSaiu = false;
+  G.inimigos.push(e);
+  return e;
+}
+
+/* Solta a guarda em volta do chefe. Usada no primeiro dano e na reposição. */
+function soltarProtetores(chefe, quantos) {
+  for (let i = 0; i < quantos; i++) {
+    const a = Math.random() * 6.283;
+    const d = PROTETOR_PERTO + Math.random() * (PROTETOR_LONGE - PROTETOR_PERTO);
+    const x = clamp(chefe.x + Math.cos(a)*d, 60, WORLD.w-60);
+    const y = clamp(chefe.y + Math.sin(a)*d, 60, WORLD.h-60);
+    const p = criarInimigo(ENEMIES.protetor, "protetor", x, y);
+    p.chefe = chefe;
+    p.base = { x: chefe.x, y: chefe.y };   // o lugar que eles rondam
+    p.agro = true;            // já saem atirando em quem mexeu com o chefe
+    G.inimigos.push(p);
+  }
+}
+
+const protetoresDe = chefe => G.inimigos.filter(e => e.tipo === "protetor" && e.chefe === chefe);
 
 function posLonge(minDist) {
   let x, y, n = 0;
@@ -1811,6 +1882,16 @@ function spawnAlien(tipo, elite) {
   return e;
 }
 
+/* No mapa de PvP o piloto não é mais um triângulo: ele voa uma Titã ou um
+   Devastador de verdade, com o casco da própria nave, escudo alto, drones em
+   formação sorteada e um combo que troca o calibre no meio da briga. */
+const PVP_NAVES  = ["tita", "devastador"];
+const PVP_ESCUDO = 150000;
+const PVP_DANO   = 40000;   // calibre x4
+const PVP_COMBO  = 50000;   // quando ele engata o x5
+const PVP_COMBO_CHANCE = 0.3;
+const PVP_DRONES = [6, 10];  // quantos drones cada um leva
+
 function spawnPiloto() {
   const outras = FACTIONS.filter(f => f.id !== G.faccao);
   const f = outras[Math.floor(Math.random()*outras.length)];
@@ -1823,8 +1904,30 @@ function spawnPiloto() {
     honra: Math.round(140*Math.pow(1.9,t)), raio: 17, cor: f.cor, faccao: f.id, piloto: true,
     drop: { plasma:[1,3], cristal:[0,1] },
   };
+
+  const noPvp = sectorData().rot === "PvP";
+  if (noPvp) {
+    const naveId = PVP_NAVES[Math.floor(Math.random()*PVP_NAVES.length)];
+    const sd = SHIPS.find(x => x.id === naveId);
+    def.nave   = naveId;
+    def.hp     = sd.hp;              // a vida é a da nave mesmo
+    def.shield = PVP_ESCUDO;
+    def.dmg    = PVP_DANO;
+    def.combo  = PVP_COMBO;
+    def.speed  = sd.speed * 0.8;
+    def.range  = 520;
+    def.raio   = naveId === "tita" ? 30 : 27;
+    def.nome  += " · " + sd.nome;
+  }
+
   const p = posLonge(raioSeguro() + 620);
-  G.inimigos.push(criarInimigo(def, "piloto", p.x, p.y));
+  const en = criarInimigo(def, "piloto", p.x, p.y);
+  if (noPvp) {
+    // formação sorteada, e cada piloto com a sua
+    en.formacao = FORMACAO_ORDEM[Math.floor(Math.random()*FORMACAO_ORDEM.length)];
+    en.nDrones  = PVP_DRONES[0] + Math.floor(Math.random()*(PVP_DRONES[1]-PVP_DRONES[0]+1));
+  }
+  G.inimigos.push(en);
 }
 
 function spawnCaixa() {
@@ -2330,18 +2433,62 @@ function atualizar(dt) {
       en.hp = Math.min(en.maxHp, en.hp + en.maxHp*0.0004*dt);
       en.sh = Math.min(en.maxSh, en.sh + en.maxSh*0.0006*dt);
     }
-    if (en.agro) { en.dx = p.x; en.dy = p.y; }
+    // o Cruzziun guarda o ponto dele: nunca persegue
+    if (en.ponto) { en.dx = en.ponto.x; en.dy = en.ponto.y; }
+    /* A guarda também não sai atrás de você: ela ronda espalhada em volta do
+       chefe, defendendo o lugar. Atira em quem chegar no alcance, mas não
+       persegue. Morto o chefe, seguem rondando o último lugar dele. */
+    else if (en.tipo === "protetor") {
+      if (en.chefe) en.base = { x: en.chefe.x, y: en.chefe.y };
+      const b = en.base || { x: en.x, y: en.y };
+
+      if (en.luto) {
+        /* Ataque disperso: sem chefe para guardar, cada um sai vagando à toa
+           pelo setor e atira em quem cruzar o caminho. Eles NÃO perseguem —
+           o destino é sorteado a partir do lugar onde o próprio Protetor
+           está, sem olhar para onde você se meteu. */
+        en.velMult = 1;
+        if (T > en.vagar) {
+          en.vagar = T + 600 + Math.random()*900;
+          en.dx = clamp(en.x + (Math.random()-0.5)*900, 60, WORLD.w-60);
+          en.dy = clamp(en.y + (Math.random()-0.5)*900, 60, WORLD.h-60);
+        }
+      } else {
+        const emAlerta = T < (en.alertaAte || 0);
+        /* "Longe" é a sua distância até a nave-mãe, não até cada guarda:
+           medindo por guarda, os do lado oposto do anel recuavam mesmo com
+           você colado no chefe. */
+        const longe = dist(p.x, p.y, b.x, b.y) > PROTETOR_DESISTE;
+        // ninguém atacando e você longe: baixam a guarda e voltam devagar
+        en.velMult = (!emAlerta && longe) ? PROTETOR_RECUO : 1;
+        if (T > en.vagar) {
+          // em alerta trocam de posição bem mais rápido: ficam agitados
+          en.vagar = T + (emAlerta ? 500 : 800) + Math.random()*(emAlerta ? 700 : 1100);
+          /* O ângulo novo sai perto do atual, não sorteado do zero: assim cada
+             um deriva pelo próprio arco do anel em vez de atravessar o meio.
+             Sorteando livre, o caminho até o ponto oposto passava colado no
+             chefe e a guarda voltava a se amontoar nele. */
+          const ang0 = Math.atan2(en.y - b.y, en.x - b.x);
+          const a = ang0 + (Math.random() - 0.5) * 2.2;
+          const d = PROTETOR_PERTO + Math.random()*(PROTETOR_LONGE - PROTETOR_PERTO);
+          en.dx = clamp(b.x + Math.cos(a)*d, 60, WORLD.w-60);
+          en.dy = clamp(b.y + Math.sin(a)*d, 60, WORLD.h-60);
+        }
+      }
+    }
+    else if (en.agro) { en.dx = p.x; en.dy = p.y; }
     else if (T > en.vagar) {
       en.vagar = T + 3000 + Math.random()*4000;
       en.dx = clamp(en.x + (Math.random()-0.5)*900, 60, WORLD.w-60);
       en.dy = clamp(en.y + (Math.random()-0.5)*900, 60, WORLD.h-60);
     }
-    const parar = en.agro ? ed.range*0.72 : 0;
+    const parar = (en.agro && en.tipo !== "protetor") ? ed.range*0.72 : 0;
     const dd = dist(en.x, en.y, en.dx, en.dy);
     if (dd > parar + 4) {
       const a = Math.atan2(en.dy - en.y, en.dx - en.x);
-      en.x += Math.cos(a) * ed.speed * dt/16;
-      en.y += Math.sin(a) * ed.speed * dt/16;
+      const vel = ed.speed * (en.velMult || 1);   // recuo faz a guarda voltar devagar
+      en.x += Math.cos(a) * vel * dt/16;
+      en.y += Math.sin(a) * vel * dt/16;
       if (!en.agro) en.ang = anguloSuave(en.ang, a, 0.1);
     }
     // em combate o inimigo fica virado para você
@@ -2362,10 +2509,49 @@ function atualizar(dt) {
     if (en.andando && en.d.sprite) alimentarRastroInimigo(en, T);
     // inimigos circulam livremente pela zona segura — o que a zona bloqueia
     // é o ataque deles, não a passagem
-    if (en.agro && podeAtacar && dp < ed.range && T - en.ultimoTiro > 950) {
+    if (ed.dmg > 0 && en.agro && podeAtacar && dp < ed.range && T - en.ultimoTiro > 950) {
       en.ultimoTiro = T;
       // os inimigos nunca miram no pet: todo tiro deles vem para você
-      atirarLaser(en, p, ed.dmg * (0.85 + Math.random()*0.3), ed.cor, false);
+      /* Piloto com combo tem dano fixo: x4 de base e x5 quando engata.
+         O resto dos inimigos segue com a variação de sempre. */
+      const dano = ed.combo
+        ? (Math.random() < PVP_COMBO_CHANCE ? ed.combo : ed.dmg)
+        : ed.dmg * (0.85 + Math.random()*0.3);
+      atirarLaser(en, p, dano, ed.cor, false);
+    }
+    /* Segundo ataque, para quem tiver o campo `missil`: um projétil bem mais
+       forte, no ritmo dele, além do tiro normal. Hoje só o Dicimulus usa. */
+    if (ed.missil && en.agro && podeAtacar && dp < ed.range &&
+        T - (en.ultimoMissil || 0) > ed.missil.cd) {
+      en.ultimoMissil = T;
+      atirarLaser(en, p, ed.missil.dano, ed.missil.cor || "#ff8a3d", false, true);
+    }
+  }
+
+  /* ---- guarda do Cruzziun ---- */
+  if (G.setor === CRUZZIUN_SETOR) {
+    // com o chefe vivo e já acordado, a guarda se repõe aos poucos
+    for (const c of G.inimigos) {
+      if (c.tipo !== "cruzziun" || !c.guardaSaiu) continue;
+      if (T < (c.proxReposicao || 0)) continue;
+      c.proxReposicao = T + PROTETOR_REPOE;
+      const faltam = (c.grupoAlvo || PROTETOR_GRUPO[0]) - protetoresDe(c).length;
+      if (faltam > 0) soltarProtetores(c, Math.min(faltam, 3));
+    }
+    // luto vencido: a guarda se autodestrói, e a explosão não fere ninguém
+    for (let i = G.inimigos.length - 1; i >= 0; i--) {
+      const g = G.inimigos[i];
+      if (g.tipo !== "protetor" || !g.luto || T < g.luto) continue;
+      explosao(g.x, g.y, g.d.cor, 26);
+      if (G.player.alvo === g) { G.player.alvo = null; G.player.atacando = false; }
+      G.inimigos.splice(i, 1);
+    }
+    // ponto vazio há 10 minutos: o chefe volta
+    if (G.cruzMortos) for (const k in G.cruzMortos) {
+      if (T < G.cruzMortos[k]) continue;
+      delete G.cruzMortos[k];
+      nascerCruzziun(CRUZZIUN_PONTOS[k]);
+      logar("Um Cruzziun voltou ao setor.");
     }
   }
 
@@ -3011,6 +3197,24 @@ function numeroDano(x, y, txt, cor) {
 
 function aplicarDano(en, dano, semNumero, doPet) {
   en.ultimoDano = G.tempo;
+  /* Encostou no Cruzziun, a guarda sai. Só na primeira vez — depois disso
+     quem repõe é a rotina de reposição, enquanto ele estiver vivo. */
+  /* Mexeu com a guarda ou com o chefe, ela fica de sobreaviso por 10s.
+     Enquanto durar, elas rondam agitadas; passado o prazo e com você longe,
+     recuam devagar para o anel. */
+  if (en.tipo === "protetor") en.alertaAte = G.tempo + PROTETOR_ALERTA;
+  if (en.tipo === "cruzziun")
+    for (const g of protetoresDe(en)) g.alertaAte = G.tempo + PROTETOR_ALERTA;
+
+  if (en.tipo === "cruzziun" && !en.guardaSaiu) {
+    en.guardaSaiu = true;
+    const q = PROTETOR_GRUPO[0] + Math.floor(Math.random()*(PROTETOR_GRUPO[1]-PROTETOR_GRUPO[0]+1));
+    soltarProtetores(en, q);
+    en.proxReposicao = G.tempo + PROTETOR_REPOE;
+    en.grupoAlvo = q;
+    toast("A guarda do Cruzziun saiu — " + q + " Protetores");
+    beep(110, 0.25);
+  }
   /* Atacar libera o revide por alguns segundos, mesmo na zona segura — mas
      só o SEU tiro faz isso. O do pet machuca sem renovar nada, senão o
      inimigo revidaria para sempre enquanto o pet estivesse em cima. */
@@ -3037,6 +3241,18 @@ function fecharSalva(s, x, y) {
 function matarInimigo(en) {
   const ed = en.d, i = G.inimigos.indexOf(en);
   if (i >= 0) G.inimigos.splice(i,1);
+  if (en.tipo === "cruzziun") {
+    /* A guarda não some junto: ela ainda briga por um minuto e depois se
+       desfaz sozinha. E o ponto dele fica marcado para renascer. */
+    const ate = G.tempo + PROTETOR_LUTO;
+    for (const g of protetoresDe(en)) { g.luto = ate; g.chefe = null; }
+    const idx = CRUZZIUN_PONTOS.indexOf(en.ponto);
+    if (idx >= 0) {
+      if (!G.cruzMortos) G.cruzMortos = {};
+      G.cruzMortos[idx] = G.tempo + CRUZZIUN_RENASCE;
+    }
+    toast("Cruzziun destruído — a guarda ainda resiste por 1 minuto");
+  }
   explosao(en.x, en.y, ed.cor, ed.boss ? 60 : ed.elite ? 34 : 22);
   beep(120, 0.16);
 
@@ -3183,7 +3399,7 @@ function mostrarMorte() {
 }
 
 function reviver(modo) {
-  const p = G.player;
+  let p = G.player;
   if (!G.morto) return;
   if (modo === "local" && (G.creditos < REVIVER_LOCAL || G.tempo >= (G.morto.ate || 0))) return;
 
@@ -3203,7 +3419,16 @@ function reviver(modo) {
     toast("De volta ao combate · escudo da config " + (G.cfgAtiva+1) + " em 50%" +
           (typeof outra === "number" ? " · config " + (2 - G.cfgAtiva) + " segue com " + fmt(outra) : ""));
   } else {
-    // chega na doca destroçada: casco e escudo no zero, recupera ali mesmo
+    /* Chega na doca destroçada: casco e escudo no zero, recupera ali mesmo.
+       Como a nave-mãe só existe no primeiro mapa, o resgate reboca você até
+       lá. Atenção: iniciarSetor cria um G.player novo, então é preciso pegar
+       a referência de novo — senão tudo abaixo escreveria no objeto velho. */
+    if (!TEM_BASE()) {
+      G.setor = 0;
+      iniciarSetor({ hp:0, sh:0, shCfg:[0,0] });
+      p = G.player;
+      toast("Rebocada até a nave-mãe, no Setor 1");
+    }
     p.x = p.dx = STATION.x + 170; p.y = p.dy = STATION.y + 210;
     p.hp = 0; p.sh = 0; p.shCfg = [0, 0];
     toast("Resgatada até a estação — casco e escudo zerados, recuperando na doca");
@@ -3396,7 +3621,7 @@ function desenhar(t) {
   ctx.strokeRect(0,0,WORLD.w,WORLD.h);
   ctx.lineWidth = 1;
 
-  desenharEstacao(t);
+  if (TEM_BASE()) desenharEstacao(t);
   for (const gt of gates()) desenharPortal(gt, t);
 
   for (const c of G.caixas) desenharCaixa(c, t);
@@ -3653,11 +3878,11 @@ function desenharNave(x,y,ang,cor,tam) {
    já no da tela — e nesses dois casos o mesmo ângulo sai espelhado. Em vez de
    renderizar tudo de novo, cada tira diz para que lado ela conta. */
 const SPRITE_NAVE = {
-  faisca:     { arq:"nave-faisca.png",     tam: 60, q: 33, larg:120, alt: 84, inv:  1 },
-  lamina:     { arq:"nave-lamina.png",     tam: 62, q: 33, larg:120, alt: 92, inv:  1 },
-  sentinela:  { arq:"nave-sentinela.png",  tam: 78, q: 33, larg: 96, alt: 96, inv: -1 },
-  devastador: { arq:"nave-devastador.png", tam: 84, q: 33, larg: 96, alt: 84, inv: -1 },
-  tita:       { arq:"nave-tita.png",       tam: 92, q: 33, larg:104, alt: 70, inv:  1 },
+  faisca:     { arq:"nave-faisca.png",     tam: 63, q: 33, larg:120, alt: 84, inv:  1 },
+  lamina:     { arq:"nave-lamina.png",     tam: 65.1, q: 33, larg:120, alt: 92, inv:  1 },
+  sentinela:  { arq:"nave-sentinela.png",  tam: 81.9, q: 33, larg: 96, alt: 96, inv: -1 },
+  devastador: { arq:"nave-devastador.png", tam: 88.2, q: 33, larg: 96, alt: 84, inv: -1 },
+  tita:       { arq:"nave-tita.png",       tam: 96.6, q: 33, larg:104, alt: 70, inv:  1 },
 };
 for (const id in SPRITE_NAVE) {
   const s = SPRITE_NAVE[id];
@@ -3697,6 +3922,10 @@ const SPRITE_INIMIGO = {
   sonda:    { arq:"inimigo-sonda.png",    larg: 76, alt:122, tam:2.9 },
   corsario: { arq:"inimigo-corsario.png", larg:124, alt: 97, tam:4.0 },
   predador: { arq:"inimigo-predador.png", larg:116, alt: 46, tam:4.4 },
+  ceifador: { arq:"inimigo-ceifador.png", larg:124, alt: 60, tam:4.0 },
+  devorador:{ arq:"inimigo-devorador.png",larg:150, alt:120, tam:3.4 },
+  cruzziun: { arq:"inimigo-cruzziun.png", larg:190, alt: 98, tam:5.2 },
+  protetor: { arq:"inimigo-protetor.png", larg:120, alt: 91, tam:4.2 },
 };
 for (const id in SPRITE_INIMIGO) {
   const s = SPRITE_INIMIGO[id];
@@ -4083,11 +4312,48 @@ function desenharDrone(x, y, ang, d, inc) {
   ctx.restore();
 }
 
+/* Drones do piloto inimigo: a mesma matemática de formação da sua frota,
+   desenhados a vetor na cor da facção dele. São enfeite de combate — não
+   atiram nem levam dano; quem tem casco é o piloto. */
+function desenharDronesInimigo(en) {
+  if (!en.nDrones) return;
+  const f = FORMACOES[en.formacao] || FORMACOES.normal;
+  const pts = pontosFormacao(f).concat(f.unicos || []);
+  const cos = Math.cos(en.ang), sin = Math.sin(en.ang);
+  const n = Math.min(en.nDrones, pts.length);
+  for (let i = 0; i < n; i++) {
+    const d = pts[i];
+    const x = en.x + d.fx*cos - d.fy*sin;
+    const y = en.y + d.fx*sin + d.fy*cos;
+    ctx.save(); ctx.translate(x, y); ctx.rotate(en.ang);
+    ctx.globalAlpha = .22; ctx.fillStyle = en.d.cor;
+    ctx.beginPath(); ctx.arc(0, 0, 9, 0, 6.29); ctx.fill();
+    ctx.globalAlpha = 1;
+    ctx.beginPath(); ctx.moveTo(6.5, 0); ctx.lineTo(-5, 4.6); ctx.lineTo(-5, -4.6);
+    ctx.closePath(); ctx.fillStyle = en.d.cor; ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,.55)"; ctx.lineWidth = 1; ctx.stroke();
+    ctx.restore();
+  }
+}
+
 function desenharInimigo(en, t) {
   const ed = en.d, r = ed.raio;
   const fig = ed.sprite ? SPRITE_INIMIGO[ed.sprite] : null;
   if (ed.piloto) {
-    desenharNave(en.x, en.y, en.ang, ed.cor, r);
+    /* No mapa de PvP o piloto tem nave de verdade: usa a mesma tira de
+       sprites da sua, inclusive escolhendo o quadro pela inclinação. */
+    const sp = ed.nave ? spriteDaNave(ed.nave) : null;
+    if (sp) {
+      desenharDronesInimigo(en);
+      const w = r * 3.2, h = w * sp.alt / sp.larg;
+      const inc = en.inc || 0;
+      const q = sp.q > 1 ? clamp(Math.round(sp.meio + inc * sp.inv * sp.meio), 0, sp.q - 1) : 0;
+      ctx.save(); ctx.translate(en.x, en.y); ctx.rotate(en.ang);
+      ctx.drawImage(sp.img, q*sp.larg, 0, sp.larg, sp.alt, -w/2, -h/2, w, h);
+      ctx.restore();
+    } else {
+      desenharNave(en.x, en.y, en.ang, ed.cor, r);
+    }
   } else if (fig && fig.img.complete && fig.img.naturalWidth > 0) {
     /* Aqui o inimigo ganha o mesmo tratamento da sua nave: esteira atrás,
        halo embaixo, chama no motor, inclinação na curva e o respiro parado.
@@ -4300,13 +4566,13 @@ function desenharRadar() {
   // (troque os rótulos "X" e "Y" aqui se preferir outras letras)
   ctx.font = "600 11px system-ui"; ctx.textAlign = "right";
   ctx.fillStyle = "#8fc4ff";
-  ctx.fillText(`SETOR ${G.setor+1}   X ${Math.round(G.player.x)}   Y ${Math.round(G.player.y)}`, x + w, y - 7);
+  ctx.fillText(`SETOR ${rotSetor(G.setor)}   X ${Math.round(G.player.x)}   Y ${Math.round(G.player.y)}`, x + w, y - 7);
 
   ctx.fillStyle = "rgba(6,14,28,.82)"; ctx.strokeStyle = "rgba(110,180,240,.35)"; ctx.lineWidth = 1;
   ctx.beginPath(); ctx.roundRect(x,y,w,h,6); ctx.fill(); ctx.stroke();
   const sx = w/WORLD.w, sy = h/WORLD.h;
   // base: só o quadradinho azul, sem o círculo da zona segura em volta
-  ctx.fillStyle = "#5fd0ff"; ctx.fillRect(x+STATION.x*sx-3, y+STATION.y*sy-3, 7,7);
+  if (TEM_BASE()) { ctx.fillStyle = "#5fd0ff"; ctx.fillRect(x+STATION.x*sx-3, y+STATION.y*sy-3, 7,7); }
   // portal: só um circulozinho branco pontilhado, sem marcador cheio
   ctx.strokeStyle = "rgba(255,255,255,.85)"; ctx.lineWidth = 1;
   ctx.setLineDash([2, 2]);
@@ -4956,7 +5222,7 @@ function fecharModal() { el("modal").classList.add("hidden"); }
    portal (456px). Se você está protegido, está atracado. */
 const naEstacao = () => emSeguranca();
 /* Só a base, para as mensagens que falam da estação em si. */
-const naBase = () => dist(G.player.x, G.player.y, STATION.x, STATION.y) < raioSeguro();
+const naBase = () => TEM_BASE() && dist(G.player.x, G.player.y, STATION.x, STATION.y) < raioSeguro();
 
 /* A loja abre e vende de qualquer canto do mapa.
    O painel de equipamentos também abre em qualquer lugar, mas mexer na
@@ -5269,7 +5535,7 @@ function detalheLoja() {
 
 function renderLoja() {
   const cab = `<div class="boxHead">
-      <div><span class="muted">Setor ${G.setor+1} — ${sectorData().nome} · </span>
+      <div><span class="muted">Setor ${rotSetor(G.setor)} — ${sectorData().nome} · </span>
         <span class="credits">${fmt(G.creditos)} cr</span></div>
       <div style="display:flex;gap:8px;align-items:center">
         <button class="mini" onclick="openEquip()">Equipamentos</button>
@@ -6270,7 +6536,7 @@ function openMap() {
       const ok = G.nivel >= s.nivel, aqui = i === G.setor;
       return `<div class="row">
         <div><div class="val" style="color:${aqui ? "#8affd8" : ok ? "#eaf4ff" : "#7b9ac0"}">
-          Setor ${i+1} — ${s.nome}${aqui ? " · você está aqui" : ""}</div>
+          Setor ${rotSetor(i)} — ${s.nome}${aqui ? " · você está aqui" : ""}</div>
           <div class="muted">nível ${s.nivel}+ · ${Object.keys(s.spawn).length
             ? Object.keys(s.spawn).map(k => ENEMIES[k].nome).join(", ") : "sem monstros"}
           ${s.pvp ? " · zona contestada" : ""}</div></div>
