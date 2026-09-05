@@ -442,14 +442,20 @@
   body.modoCel.hudAberta #topLeft { width: 208px; padding: 8px 11px;
       background: rgba(8,16,32,.82); border: 1px solid rgba(90,160,230,.32);
       backdrop-filter: blur(6px); }
-  body.modoCel.hudAberta #topLeftBtns { flex-direction: column; }
   /* Com a HUD aberta o jogador está lendo, não voando: os controles saem
      da frente e cada painel ganha um canto só seu. Antes os botões de menu
      caíam em cima do painel de créditos e o minimapa ficava atrás dele. */
   body.modoCel.hudAberta #celJoy,
   body.modoCel.hudAberta #celFogo,
   body.modoCel.hudAberta #celAlvo,
+  body.modoCel.hudAberta #celConf,
+  body.modoCel.hudAberta #celMao,
+  body.modoCel.hudAberta #topLeftBtns,
   body.modoCel.hudAberta #abilityBar { display: none !important; }
+
+  /* a engrenagem de configuração do painel do piloto vira repetição do botão
+     CONF no polegar direito, então some no celular */
+  body.modoCel #cfgBtn { display: none !important; }
 
   body.modoCel #topRight { top: calc(8px + env(safe-area-inset-top));
                            right: calc(56px + env(safe-area-inset-right));
@@ -515,6 +521,12 @@
       font-size: 11.5px; font-weight: 700; letter-spacing: .1em; color: #cfe3ff;
       background: rgba(8,16,32,.85); border: 1px solid rgba(120,180,240,.45); }
   body.modoCel #celConf b { color: #ffd166; font-size: 14px; }
+  body.modoCel #celConf { overflow: hidden; }
+  #celConfFill { position: absolute; left: 0; bottom: 0; height: 3px; width: 100%;
+                 background: #7ec8ff; transition: width .1s linear; }
+  body.modoCel #celConf.carregando { color: #7b9ac0; border-color: rgba(120,180,240,.22); }
+  body.modoCel #celConf.carregando b { color: #8fb4dc; }
+  body.modoCel #celConf.carregando #celConfFill { background: #ffd166; }
 
   /* mãozinha: recolhe o que estiver perto sem precisar mirar o toque */
   body.modoCel #celMao { display: flex; position: absolute; z-index: 14;
@@ -6701,7 +6713,8 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
       '<div id="celJoy"><i id="celKnob"></i></div>' +
       '<div id="celAlvo" title="Proximo alvo">&#8982;</div>' +
       '<div id="celFogo">FOGO</div>' +
-      '<div id="celConf" title="Trocar de configuração">CONF <b id="celConfN">1</b></div>' +
+      '<div id="celConf" title="Trocar de configuração">CONF <b id="celConfN">1</b>' +
+        '<i id="celConfFill"></i></div>' +
       '<div id="celMao" title="Recolher o que está perto">' +
         '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" ' +
         'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
@@ -6793,6 +6806,17 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
       const g = el("celCarga"); if (g) g.textContent = cargaUsada() + " / " + cargoMax();
       const f = el("celFogo");  if (f) f.classList.toggle("on", !!(G.player && G.player.atacando));
       const cn = el("celConfN"); if (cn) cn.textContent = (G.cfgAtiva || 0) + 1;
+      /* mesma leitura do botão do computador: enquanto a troca não libera,
+         o botão fica apagado e a barrinha embaixo vai enchendo */
+      const cc = el("celConf");
+      if (cc && G.player) {
+        const resta = (G.player.cfgCd || 0) - G.tempo;
+        const carregando = resta > 0;
+        cc.classList.toggle("carregando", carregando);
+        const cf = el("celConfFill");
+        if (cf) cf.style.width = carregando
+          ? (100 * (1 - resta / CFG_ESPERA)).toFixed(0) + "%" : "100%";
+      }
       /* o botao Saltar e posicionado em unidade de mundo pelo codigo
          original; com o zoom isso deixa de ser pixel de tela */
       const sb = el("saltoBox");
