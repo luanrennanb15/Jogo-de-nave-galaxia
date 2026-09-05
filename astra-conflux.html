@@ -142,6 +142,20 @@
   button.mini { padding: 3px 8px; font-size: 11px; }
   button.danger { background: rgba(140,40,50,.7); border-color: rgba(255,120,120,.5); }
 
+  /* o que você acabou de recolher, no alto e no meio da tela */
+  #avisoColeta { position: absolute; top: 54px; left: 50%; transform: translateX(-50%);
+                 pointer-events: none; z-index: 6; opacity: 0; white-space: nowrap;
+                 font-size: 19px; font-weight: 800; letter-spacing: .12em;
+                 text-transform: uppercase; color: #fff;
+                 text-shadow: 0 2px 10px rgba(0,0,0,.9), 0 0 20px rgba(130,200,255,.4); }
+  #avisoColeta.on { animation: avisoSobe 1.9s ease-out forwards; }
+  @keyframes avisoSobe {
+    0%   { opacity: 0; transform: translateX(-50%) translateY(10px); }
+    12%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+    72%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+    100% { opacity: 0; transform: translateX(-50%) translateY(-12px); }
+  }
+
   #toast { position: absolute; top: 118px; left: 50%; transform: translateX(-50%);
            display: flex; flex-direction: column; gap: 4px; align-items: center; pointer-events: none; z-index: 5; }
   .toastMsg { background: rgba(10,22,40,.92); border: 1px solid rgba(110,200,255,.35);
@@ -337,6 +351,7 @@
     #logPanel  { display: none !important; }
     #hint      { display: none !important; }
 
+    #avisoColeta { top: 40px; font-size: 15px; letter-spacing: .09em; }
     #toast { top: 96px; }
     .toastMsg { font-size: 11px; padding: 4px 11px; }
 
@@ -477,7 +492,7 @@
 
   /* --- tiro e troca de alvo, no polegar direito --- */
   body.modoCel #celFogo { display: flex; position: absolute; z-index: 14;
-      right: calc(16px + env(safe-area-inset-right)); bottom: calc(16px + env(safe-area-inset-bottom));
+      right: calc(16px + env(safe-area-inset-right)); bottom: calc(66px + env(safe-area-inset-bottom));
       width: 92px; height: 92px; border-radius: 50%; touch-action: none;
       align-items: center; justify-content: center; font-size: 13px; font-weight: 700;
       letter-spacing: .1em; color: #ffcf9a; text-shadow: 0 1px 3px rgba(0,0,0,.6);
@@ -487,10 +502,26 @@
       background: radial-gradient(circle at 38% 32%, rgba(255,190,110,.75), rgba(180,50,20,.8) 72%);
       box-shadow: 0 0 26px rgba(255,140,60,.6); }
   body.modoCel #celAlvo { display: flex; position: absolute; z-index: 14;
-      right: calc(120px + env(safe-area-inset-right)); bottom: calc(34px + env(safe-area-inset-bottom));
+      right: calc(120px + env(safe-area-inset-right)); bottom: calc(88px + env(safe-area-inset-bottom));
       width: 60px; height: 60px; border-radius: 50%; touch-action: none;
       align-items: center; justify-content: center; font-size: 24px; line-height: 1; color: #8affd8;
       background: rgba(8,26,32,.8); border: 1px solid rgba(120,255,200,.5); }
+
+  /* troca de configuração, encaixada logo abaixo do botão de tiro */
+  body.modoCel #celConf { display: flex; position: absolute; z-index: 14;
+      right: calc(16px + env(safe-area-inset-right)); bottom: calc(14px + env(safe-area-inset-bottom));
+      width: 92px; height: 44px; border-radius: 12px; touch-action: none;
+      align-items: center; justify-content: center; gap: 5px;
+      font-size: 11.5px; font-weight: 700; letter-spacing: .1em; color: #cfe3ff;
+      background: rgba(8,16,32,.85); border: 1px solid rgba(120,180,240,.45); }
+  body.modoCel #celConf b { color: #ffd166; font-size: 14px; }
+
+  /* mãozinha: recolhe o que estiver perto sem precisar mirar o toque */
+  body.modoCel #celMao { display: flex; position: absolute; z-index: 14;
+      right: calc(122px + env(safe-area-inset-right)); bottom: calc(20px + env(safe-area-inset-bottom));
+      width: 56px; height: 56px; border-radius: 50%; touch-action: none;
+      align-items: center; justify-content: center; color: #ffd9a0;
+      background: rgba(40,26,8,.8); border: 1px solid rgba(255,200,120,.5); }
 
   /* barra de acoes entre os dois polegares, so com os espacos usados */
   body.modoCel #abilityBar { left: calc(154px + env(safe-area-inset-left));
@@ -608,6 +639,7 @@
     <button class="mini" onclick="toggleFullscreen()">Tela cheia</button>
   </div>
 
+  <div id="avisoColeta"></div>
   <div id="toast"></div>
 
   <div class="overlay" id="startScreen">
@@ -1098,6 +1130,31 @@ const RAIO_COLETA  = 70;
    acima dele, em vez de pousar em cima e escondê-lo. Tem de ser menor
    que RAIO_COLETA, senão ela para longe demais e nunca recolhe. */
 const AFASTA_COLETA = 46;
+/* Quão perto do ponto de estacionamento a nave precisa chegar para recolher.
+   Antes bastava estar dentro de RAIO_COLETA do próprio item, e ela recolhia
+   de passagem, antes de chegar. */
+const PARADA_COLETA = 22;
+/* Alcance do botão da mãozinha: o que estiver além disto ele ignora. */
+const ALCANCE_MAO = 900;
+
+/* Ponto onde a nave para para recolher: centralizada no item, um pouco acima. */
+function pontoDeColeta(o) {
+  return { x: clamp(o.x, 20, WORLD.w - 20),
+           y: clamp(o.y - AFASTA_COLETA, 20, WORLD.h - 20) };
+}
+
+/* Manda recolher o mais próximo — é o que o botão da mãozinha aciona. */
+function coletarPerto() {
+  if (!running || G.morto) return;
+  const p = G.player;
+  let alvo = null, tipo = null, dmin = Infinity;
+  for (const l of G.loot)   { const d = dist(p.x,p.y,l.x,l.y);   if (d < dmin) { dmin=d; alvo=l;  tipo="loot";  } }
+  for (const c of G.caixas) { const d = dist(p.x,p.y,c.x,c.y);   if (d < dmin) { dmin=d; alvo=c;  tipo="caixa"; } }
+  if (!alvo || dmin > ALCANCE_MAO) { toast("Nada por perto para recolher"); return; }
+  G.coleta = { obj: alvo, tipo, t0: null };
+  const q = pontoDeColeta(alvo);
+  G.player.dx = q.x; G.player.dy = q.y;
+}
 
 const CAIXA_MAX = 9;
 const CAIXA_INTERVALO = 5200;
@@ -1957,8 +2014,8 @@ cv.addEventListener("pointerdown", e => {
     if (dist(px, py, cx.x, cx.y) < 28) { aColetar = cx; tipoColeta = "caixa"; break; }
   if (aColetar) {
     G.coleta = { obj: aColetar, tipo: tipoColeta, t0: null };
-    G.player.dx = clamp(aColetar.x, 20, WORLD.w - 20);
-    G.player.dy = clamp(aColetar.y - AFASTA_COLETA, 20, WORLD.h - 20);
+    const q = pontoDeColeta(aColetar);
+    G.player.dx = q.x; G.player.dy = q.y;
     return;
   }
 
@@ -2390,7 +2447,7 @@ function atualizar(dt) {
     const lista = G.coleta.tipo === "loot" ? G.loot : G.caixas;
     const idx = lista.indexOf(o);
     if (idx < 0) G.coleta = null;
-    else if (dist(p.x, p.y, o.x, o.y) <= RAIO_COLETA) {
+    else if (dist(p.x, p.y, pontoDeColeta(o).x, pontoDeColeta(o).y) <= PARADA_COLETA) {
       if (G.coleta.t0 == null) G.coleta.t0 = T;
       if (T - G.coleta.t0 >= TEMPO_COLETA) {
         if (G.coleta.tipo === "loot") coletar(o); else abrirCaixa(o);
@@ -3020,6 +3077,7 @@ function coletar(l) {
   progredirMissao("coletar", l.tipo, q);
   G.danos.push({ x:G.player.x, y:G.player.y-40, txt:"+"+q+" "+RES[l.tipo].curto, t:G.tempo, cor:RES[l.tipo].cor });
   registrarGanho(`<span style="color:${RES[l.tipo].cor}">+${q} ${RES[l.tipo].nome}</span>`);
+  avisoColeta(`+${q} ${RES[l.tipo].nome}`);
   beep(660, 0.035);
 }
 
@@ -3028,17 +3086,22 @@ function abrirCaixa(c) {
   progredirMissao("caixa");
   const n = 1 + G.nivel;
   if (c.tipo === "cred")      { const q = Math.round(2200*n*(0.6+Math.random())); G.creditos += q; G.stats.ganho += q;
-                                registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#ffd166">+${fmt(q)} cr</span>`); }
+                                registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#ffd166">+${fmt(q)} cr</span>`);
+                                avisoColeta(`+${fmt(q)} créditos`); }
   else if (c.tipo === "mcb")  { const q = 60+Math.floor(Math.random()*140); G.municao.mcb += q;
-                                registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#7ee8ff">+${q} MCB-25</span>`); }
+                                registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#7ee8ff">+${q} MCB-25</span>`);
+                                avisoColeta(`+${q} MCB-25`); }
   else if (c.tipo === "ucb")  { const q = 20+Math.floor(Math.random()*45);  G.municao.ucb += q;
-                                registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#c66bff">+${q} UCB-100</span>`); }
+                                registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#c66bff">+${q} UCB-100</span>`);
+                                avisoColeta(`+${q} UCB-100`); }
   else if (c.tipo === "foguete") { const q = 3+Math.floor(Math.random()*6); G.foguetes.R310 += q;
-                                registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#ff8a3d">+${q} foguetes R-310</span>`); }
+                                registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#ff8a3d">+${q} foguetes R-310</span>`);
+                                avisoColeta(`+${q} foguetes R-310`); }
   else { const k = Object.keys(RES)[Math.floor(Math.random()*3)];
          const q = Math.min(cargoMax()-cargaUsada(), 3+Math.floor(Math.random()*8));
          if (q > 0) { G.carga[k] += q; progredirMissao("coletar", k, q);
-                      registrarGanho(`<b>Caixa de bônus</b><br><span style="color:${RES[k].cor}">+${q} ${RES[k].nome}</span>`); }
+                      registrarGanho(`<b>Caixa de bônus</b><br><span style="color:${RES[k].cor}">+${q} ${RES[k].nome}</span>`);
+                      avisoColeta(`+${q} ${RES[k].nome}`); }
          else toast("Caixa encontrada, mas a carga está cheia"); }
   explosao(c.x, c.y, "#8affd8", 14);
   beep(880, 0.05);
@@ -6572,6 +6635,19 @@ function anguloSuave(a, alvo, k) {
   else if (r < -Math.PI) r += Math.PI*2;
   return r;
 }
+/* Aviso grande no alto do centro: o que acabou de entrar na carga. */
+let avisoColetaT = null;
+function avisoColeta(txt) {
+  const e = el("avisoColeta");
+  if (!e) return;
+  e.textContent = txt;
+  e.classList.remove("on");
+  void e.offsetWidth;                 // reinicia a animação do zero
+  e.classList.add("on");
+  clearTimeout(avisoColetaT);
+  avisoColetaT = setTimeout(() => e.classList.remove("on"), 1950);
+}
+
 function toast(msg) {
   const d = document.createElement("div");
   d.className = "toastMsg"; d.textContent = msg;
@@ -6625,6 +6701,15 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
       '<div id="celJoy"><i id="celKnob"></i></div>' +
       '<div id="celAlvo" title="Proximo alvo">&#8982;</div>' +
       '<div id="celFogo">FOGO</div>' +
+      '<div id="celConf" title="Trocar de configuração">CONF <b id="celConfN">1</b></div>' +
+      '<div id="celMao" title="Recolher o que está perto">' +
+        '<svg viewBox="0 0 24 24" width="26" height="26" fill="none" stroke="currentColor" ' +
+        'stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' +
+        '<path d="M9 11V4.5a1.5 1.5 0 0 1 3 0V11"/>' +
+        '<path d="M12 11V3.6a1.5 1.5 0 0 1 3 0V11"/>' +
+        '<path d="M15 11V5.2a1.5 1.5 0 0 1 3 0V13"/>' +
+        '<path d="M9 11V8.4a1.5 1.5 0 0 0-3 0V14c0 3.6 2.4 6.6 6 6.6h1.6c3 0 4.4-2.4 4.4-5.4"/>' +
+        '</svg></div>' +
       '<div id="celMenu">&#9636;</div>' +
       '<div class="panel" id="celInfo">' +
         '<span class="credits" id="celCred">0</span>' +
@@ -6676,6 +6761,12 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
     el("celAlvo").addEventListener("pointerdown", e => {
       e.preventDefault(); if (running) proximoAlvo();
     });
+    el("celConf").addEventListener("pointerdown", e => {
+      e.preventDefault(); if (running) alternarConfig();
+    });
+    el("celMao").addEventListener("pointerdown", e => {
+      e.preventDefault(); coletarPerto();
+    });
     el("celMenu").addEventListener("pointerdown", e => {
       e.preventDefault(); document.body.classList.toggle("hudAberta");
     });
@@ -6701,6 +6792,7 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
       const c = el("celCred");  if (c) c.textContent = fmt(G.creditos);
       const g = el("celCarga"); if (g) g.textContent = cargaUsada() + " / " + cargoMax();
       const f = el("celFogo");  if (f) f.classList.toggle("on", !!(G.player && G.player.atacando));
+      const cn = el("celConfN"); if (cn) cn.textContent = (G.cfgAtiva || 0) + 1;
       /* o botao Saltar e posicionado em unidade de mundo pelo codigo
          original; com o zoom isso deixa de ser pixel de tela */
       const sb = el("saltoBox");
