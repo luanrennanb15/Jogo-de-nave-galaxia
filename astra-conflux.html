@@ -865,11 +865,12 @@ const UPGRADES = [
   { id:"coletor",nome:"Coletor de Carga",     desc:"+15% de carga e alcance de coleta",  base:6000, max:8 },
 ];
 
-const ABILITIES = [
-  { id:"reparo",   tecla:"Q", nome:"Reparo",      icone:"✚", nivel:1,  cd:70000,  dur:0,     desc:"Restaura 35% do casco na hora." },
-  { id:"sobrecarga",tecla:"E",nome:"Sobrecarga",  icone:"⚡", nivel:5,  cd:100000, dur:12000, desc:"Dobra o dano por 12 segundos." },
-  { id:"camuflagem",tecla:"F",nome:"Camuflagem",  icone:"◍", nivel:9,  cd:140000, dur:9000,  desc:"Some do radar inimigo por 9 segundos." },
-];
+/* As três habilidades do começo do projeto — Reparo, Sobrecarga e Camuflagem —
+   saíram do jogo. Quem faz esse papel agora são os módulos (Véu-7, EMP-9 e
+   Supernova), que você compra e encaixa. A lista fica vazia em vez de sumir:
+   o resto do código já trata "habilidade que não existe" como espaço vazio,
+   inclusive nas barras salvas em contas antigas. */
+const ABILITIES = [];
 
 const RANKS = [
   { nome:"Recruta",   honra:0 },       { nome:"Soldado",  honra:600 },
@@ -1102,13 +1103,15 @@ const BARRA_COLS = 8;
 function barraPadrao() {
   const l0 = new Array(BARRA_COLS).fill(null);
   const l1 = new Array(BARRA_COLS).fill(null);
-  ABILITIES.forEach((a,i) => l0[i] = { k:"hab", id:a.id });
-  l0[3] = { k:"mod", id:"VEU" };
-  l0[4] = { k:"mod", id:"NOVA" };
-  l0[5] = { k:"mod", id:"EMP" };
-  l0[6] = { k:"fog", id:"R310" };
-  l0[7] = { k:"fog", id:"PLT21" };
-  l0[6] = { k:"fog", id:"PLT30" };
+  /* Sem as três habilidades antigas, a fileira começa nos módulos em vez de
+     abrir com espaços vazios. O R-310 estava sendo escrito no mesmo índice do
+     PLT-3030 e nunca aparecia; agora cada foguete tem o seu lugar. */
+  l0[0] = { k:"mod", id:"VEU" };
+  l0[1] = { k:"mod", id:"NOVA" };
+  l0[2] = { k:"mod", id:"EMP" };
+  l0[3] = { k:"fog", id:"R310" };
+  l0[4] = { k:"fog", id:"PLT21" };
+  l0[5] = { k:"fog", id:"PLT30" };
   AMMO_ORDER.forEach((k,i) => { if (i < BARRA_COLS) l1[i] = { k:"ammo", id:k }; });
   l1[6] = { k:"proj", id:"P1122" };
   l1[7] = { k:"proj", id:"P3030" };
@@ -1136,7 +1139,7 @@ const MULT_ESTACAO  = 3;
 /* Créditos, XP e honra entram sozinhos ao abater.
    Carga e caixas ficam no espaço: basta clicar nelas que a nave vai lá e recolhe,
    com um instante de coleta ao chegar. */
-const TEMPO_COLETA = 200;
+const TEMPO_COLETA = 0;     // recolhe assim que estaciona, sem espera
 const RAIO_COLETA  = 70;
 /* Onde a nave estaciona para recolher: centralizada no item e um pouco
    acima dele, em vez de pousar em cima e escondê-lo. Tem de ser menor
@@ -1417,7 +1420,7 @@ function alternarConfig() { trocarConfig(1 - G.cfgAtiva); }
 function trocarConfig(i) {
   if (!G || i === G.cfgAtiva) return;
   const resta = (G.player.cfgCd || 0) - G.tempo;
-  if (resta > 0) { toast("Trocando... aguarde " + (resta/1000).toFixed(1) + "s"); return; }
+  if (resta > 0) { toast("Aguarde o resfriamento"); return; }
   const p = G.player;
   p.cfgCd = G.tempo + CFG_ESPERA;
 
@@ -1447,7 +1450,7 @@ function trocarConfig(i) {
   if (!temModulo("VEU")) G.player.veuAtivo = false;
   montarBarraHab();
   explosao(G.player.x, G.player.y, "#8affd8", 16);
-  toast("Configuração " + (i+1) + " ativada · escudo " + fmt(p.sh) + "/" + fmt(mx));
+  toast("Configuração " + (i+1) + " ativada");
   if (!el("modal").classList.contains("hidden")) renderBase();
 }
 const primeiroVazio = cat => G.equip[cat].indexOf(null);
@@ -1669,7 +1672,6 @@ function dmgBase() {
   let d = base * G.mod.dmg * (1 + 0.12 * G.up.laser) * (1 + bonusDrones("laser"))
         * (1 + bonusFormacao("laser"))
         * (1 + 0.02 * rankIndex()) * clanBonus();
-  if (G.buff.sobrecarga > G.tempo) d *= 2;
   return d;
 }
 const dmgTotal = () => dmgBase() * ammoMult();
@@ -1680,7 +1682,7 @@ const cargaUsada = () => G.carga.titanio + G.carga.plasma + G.carga.cristal;
 const xpNecessario = n => Math.floor(400 * Math.pow(n, 1.7));
 const clanNivel  = () => G.clan ? Math.min(10, 1 + Math.floor(G.clanXp / 50000)) : 0;
 const clanBonus  = () => G.clan ? 1 + 0.04 * clanNivel() : 1;
-const invisivel  = () => G.buff.camuflagem > G.tempo || !!(G.player && G.player.veuAtivo);
+const invisivel  = () => !!(G.player && G.player.veuAtivo);   // só o módulo Véu esconde
 
 /* Estação fixa no canto superior esquerdo, com o dobro do raio antigo.
    Tudo dentro de raioSeguro() é zona segura: ninguém ataca lá dentro. */
@@ -2080,9 +2082,6 @@ window.addEventListener("keydown", e => {
   else if (k === "p") openProfile();
   else if (k === "h") openHelp();
   else if (k === "l") toggleLog();
-  else if (k === "q") usarHab("reparo");
-  else if (k === "e") usarHab("sobrecarga");
-  else if (k === "f") usarHab("camuflagem");
   else if (k === "v") alternarVeu();
   else if (k === "x") dispararNova();
   else if (k === "tab") { e.preventDefault(); proximoAlvo(); }
@@ -2134,11 +2133,12 @@ function selAmmo(id) {
 
 /* ===================== HABILIDADES E FOGUETES ===================== */
 
-function habLiberada(id) { return G.nivel >= ABILITIES.find(a => a.id === id).nivel; }
+function habLiberada(id) { const a = ABILITIES.find(x => x.id === id); return !a || G.nivel >= a.nivel; }
 function habPronta(id)   { return G.tempo >= (G.hab[id] || 0); }
 
 function usarHab(id) {
   const a = ABILITIES.find(x => x.id === id);
+  if (!a) { abrirEditorBarra(); return; }   // espaço de habilidade antiga: abre o editor
   if (!habLiberada(id)) { toast(a.nome + " libera no nível " + a.nivel); return; }
   if (!habPronta(id)) { toast(a.nome + " recarregando"); return; }
   G.hab[id] = G.tempo + a.cd;
@@ -3127,8 +3127,6 @@ function ganharXp(q) {
     G.xp -= xpNecessario(G.nivel); G.nivel++;
     explosao(G.player.x, G.player.y, "#b06bff", 40);
     toast("Nível " + G.nivel + "!"); logar("Subiu para o nível " + G.nivel + ".");
-    const nova = ABILITIES.find(a => a.nivel === G.nivel);
-    if (nova) toast("Nova habilidade: " + nova.nome + " (" + nova.tecla + ")");
   }
 }
 
@@ -4684,7 +4682,6 @@ function abrirEditorBarra() {
       ${grupo("Munição", AMMO_ORDER.map(k => ({ k:"ammo", id:k, nome:AMMO[k].nome })))}
       ${grupo("Foguetes", ROCKET_ORDER.map(k => ({ k:"fog", id:k, nome:ROCKETS[k].nome })))}
       ${grupo("Projéteis do lança-mísseis", PROJ_ORDER.map(k => ({ k:"proj", id:k, nome:PROJETEIS[k].nome })))}
-      ${grupo("Habilidades", ABILITIES.map(a => ({ k:"hab", id:a.id, nome:a.nome })))}
       ${grupo("Módulos", Object.keys(ITEMS.modulo).filter(id => MODULO_MANUAL[id])
               .map(id => ({ k:"mod", id, nome:ITEMS.modulo[id].nome })))}
       ${grupo(`Formação de drones (a partir de ${FORMACAO_MIN} drones)`,
@@ -6315,7 +6312,6 @@ function openHelp() {
     <div class="row"><div class="val">1 a 8</div><div class="muted">aciona o espaço correspondente da fileira de cima da barra</div></div>
     <div class="row"><div class="val">F1 a F8</div><div class="muted">o mesmo para a fileira de baixo</div></div>
     <div class="row"><div class="val">O que cada espaço faz</div><div class="muted">munição: passa a atirar com ela, mirando sozinho se você não tiver alvo · foguete: dispara na hora · habilidade e módulo: ativam</div></div>
-    <div class="row"><div class="val">Q / E / F</div><div class="muted">reparo · sobrecarga · camuflagem</div></div>
     <div class="row"><div class="val">Barra de ação</div><div class="muted">duas fileiras de 8 espaços no rodapé. A engrenagem ao lado abre o editor: clique num espaço para esvaziar e num item da lista para encaixar. Munição e foguete na barra ficam destacados quando estão em uso — clicar neles seleciona</div></div>
     <div class="row"><div class="val">Lança-mísseis</div><div class="muted">um por nave, no encaixe logo abaixo dos canhões: o LM-45 solta 3 mísseis por salva e o LM-100 solta 5, com 5s de recarga. Usam projéteis próprios — 1122 com 3.500 de dano cada, 2540 com 5.000 e 3030 com 6.500. Coloque o projétil na barra: clicar nele escolhe e já lança a salva, que sai em leque e curva até o alvo</div></div>
     <div class="row"><div class="val">Módulos</div><div class="muted">quarto tipo de equipamento, com encaixe próprio na nave: MX-Míssil é passivo e, enquanto você ataca, lança sozinho tanto o foguete escolhido quanto a salva do lança-mísseis; EMP-9 é acionado por você e cega os inimigos por perto por 3s; Véu-7 (tecla V) te deixa invisível até você atacar; Supernova (tecla X) explode em área</div></div>
@@ -6660,11 +6656,18 @@ function avisoColeta(txt) {
   avisoColetaT = setTimeout(() => e.classList.remove("on"), 1950);
 }
 
+/* Um aviso por vez. Antes cada chamada empilhava mais uma linha, e apertar
+   um botão em recarga várias vezes enchia a tela de mensagens iguais. */
+let toastT = null;
 function toast(msg) {
+  const c = el("toast");
+  if (!c) return;
+  c.textContent = "";
   const d = document.createElement("div");
   d.className = "toastMsg"; d.textContent = msg;
-  el("toast").appendChild(d);
-  setTimeout(() => d.remove(), 2900);
+  c.appendChild(d);
+  clearTimeout(toastT);
+  toastT = setTimeout(() => { if (d.parentNode) d.remove(); }, 2600);
 }
 
 let audioCtx = null;
