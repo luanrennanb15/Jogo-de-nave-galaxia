@@ -80,46 +80,103 @@ drop: 8 a 14 de Plasma · 6 a 12 de Cristal de Vórtice
 observacoes: CHEFE · ainda sem figura 3D — desenhado como poligono
 ------------------------------------------- grau 7 dificuldade
 nome: Colosso de Ferro
-casco: 450.000
-escudo: 220.000
-dano: 900
-velocidade: 2.2
+casco: 40.000
+escudo: 40.000
+dano: 3.200
+velocidade: 2.6
 distancia: 560
-locacao que fica do mapa: Setor 6 — Forja de Ferro (7 por vez)
-XP: 26.000
-Honra: 
-Creditos: 380.000
+locacao que fica do mapa: Setor 5 — (20 por vez)
+XP: 3.200 
+Honra: 16
+Creditos: 12.800
 drop: 10 a 18 de Plasma · 3 a 7 de Cristal de Vórtice
 observacoes: ainda sem figura 3D — desenhado como poligono
 ------------------------------------------- grau 8 dificuldade
 nome: Aberração
-casco: 820.000
-escudo: 400.000
-dano: 1400
-velocidade: 2.6
+casco: 300.000
+escudo: 200.000
+dano: 3.600
+velocidade: 2.3
 distancia: 600
-locacao que fica do mapa: Setor 6 — Forja de Ferro (4 por vez)
-XP: 48.000
-Honra: 
-Creditos: 640.000
+locacao que fica do mapa: Setor 5 — (15 por vez)
+XP: 25.600
+Honra: 128
+Creditos: 204.800 
 drop: 6 a 12 de Cristal de Vórtice · 12 a 20 de Plasma
-observacoes: ainda sem figura 3D — desenhado como poligono
+observacoes: passivo — so revida se voce atirar - ainda sem figura 3D — desenhado como poligono
 -------------------------------------------grau 9 dificuldade
-nome: ANIQUILADOR
-casco: 2.600.000
-escudo: 1.200.000
-dano: 2200
-velocidade: 2
+nome: ALQUIMIN
+casco: 50.000
+escudo: 40.000
+dano: 1.650
+velocidade: 2.8
 distancia: 680
-locacao que fica do mapa: Setor 6 — Forja de Ferro (1 por vez)
-XP: 180.000
-Honra: 
-Creditos: 2.400.000
+locacao que fica do mapa: Setor 6 —  (12 por vez), fica do mapa: Setor 7 —  (20 por vez)
+XP: 6.400 
+Honra: 32
+Creditos: 12.800 
 drop: 25 a 45 de Cristal de Vórtice · 30 a 60 de Plasma
 observacoes: CHEFE · ainda sem figura 3D — desenhado como poligono
 -------------------------------------------
+nome: ANIQUILADOR
+casco: 400.000
+escudo: 300.000
+dano: 4.450
+velocidade: 2.3
+distancia: 680
+locacao que fica do mapa: Setor 6 —  (12 por vez), fica do mapa: Setor 7 —  (20 por vez)
+XP: 51.200 
+Honra: 256
+Creditos: 409.600 
+drop: 25 a 45 de Cristal de Vórtice · 30 a 60 de Plasma
+observacoes: passivo — so revida se voce atirar - CHEFE · ainda sem figura 3D — desenhado como poligono
+-------------------------------------------
+nome: Dicimulus
+casco: 40.000
+escudo: 30.000
+dano: 1.000 
+Rocket: 3.000
+velocidade: 2.5
+distancia: 680
+locacao que fica do mapa: Setor 8 —  (30 por vez)
+XP: 6.000 
+Honra: 30
+Creditos: 12.000 
+drop: 25 a 45 de Cristal de Vórtice · 30 a 60 de Plasma
+observacoes: passivo — so revida se voce atirar - ele tambem ataca missel a cada 3 segundos -CHEFE · ainda sem figura 3D — desenhado como poligono
+-------------------------------------------
+nome: Protetor 
+casco: 50.000
+escudo: 40.000
+dano: 1.500
+velocidade: 3.6
+distancia: 680
+locacao que fica do mapa: Setor x6 —  (Sai um grupo de 20 a 30 Protetor quando o Cruzziun é atacado)
+suposta aparição no mapa
+x3721 y1067
+x1951 y1415
+x1979 y3142
+x3981 y2755
 
-
+XP: 6.400 
+Honra: 32
+Creditos: 12.800 
+drop: 25 a 45 de Cristal de Vórtice · 30 a 60 de Plasma
+observacoes: Os Protetor funcionam como naves de guarda e saem para defender o Cruzziun assim que ele sofre dano.Eles atacam principalmente o jogador que começou a atirar ou quem causa mais dano.Se destruídos durante o combate, novos Protetor podem reaparecer rapidamente para proteger a nave-mãe. -CHEFE · ainda sem figura 3D — desenhado como poligono
+-------------------------------------------
+nome: Cruzziun 
+casco: 1.600.000
+escudo: 1.200.000
+dano: 0
+velocidade: 0.6
+distancia: 680
+locacao que fica do mapa: Setor 8 —  (4 por vez)
+XP: 536.200 
+Honra: 4.096 
+Creditos: 1.638.400 
+drop: 25 a 45 de Cristal de Vórtice · 30 a 60 de Plasma
+observacoes: passivo — so revida se voce atirar-CHEFE · ainda sem figura 3D — desenhado como poligono
+-------------------------------------------
 SETORES, PARA REFERENCIA
 
 Setor 1 — Órbita Baixa
@@ -141,4 +198,14 @@ Setor 5 — Núcleo Sombrio
 
 Setor 6 — Forja de Ferro
   nivel minimo: 20
+
+Setor 7 — Forja de Ferro
+  nivel minimo: 25
+
+Setor 8 — Forja de Ferro
+  nivel minimo: 30
+
+Setor PVO — Forja de Ferro
+  nivel minimo: 15
+
 
