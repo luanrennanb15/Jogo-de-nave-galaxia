@@ -1094,6 +1094,10 @@ const MULT_ESTACAO  = 3;
    com um instante de coleta ao chegar. */
 const TEMPO_COLETA = 200;
 const RAIO_COLETA  = 70;
+/* Onde a nave estaciona para recolher: centralizada no item e um pouco
+   acima dele, em vez de pousar em cima e escondê-lo. Tem de ser menor
+   que RAIO_COLETA, senão ela para longe demais e nunca recolhe. */
+const AFASTA_COLETA = 46;
 
 const CAIXA_MAX = 9;
 const CAIXA_INTERVALO = 5200;
@@ -1954,7 +1958,7 @@ cv.addEventListener("pointerdown", e => {
   if (aColetar) {
     G.coleta = { obj: aColetar, tipo: tipoColeta, t0: null };
     G.player.dx = clamp(aColetar.x, 20, WORLD.w - 20);
-    G.player.dy = clamp(aColetar.y, 20, WORLD.h - 20);
+    G.player.dy = clamp(aColetar.y - AFASTA_COLETA, 20, WORLD.h - 20);
     return;
   }
 
@@ -3923,41 +3927,27 @@ function desenharDrones(t) {
   const forma = formacaoAtual(comuns.length);
   comuns.forEach((idx,k) => alvos[idx] = forma[k]);
 
+  /* Na curva a formação se fecha: os drones puxam para o centro da nave e
+     deitam para o lado da manobra. Quanto mais fechada a curva, mais eles
+     encolhem — numa curva suave o efeito é quase imperceptível.
+     inclinacaoTita já vale de -1 a 1 e mede a força do giro. */
+  const inc = inclinacaoTita;
+  const puxa = 1 - Math.min(0.40, Math.abs(inc) * 0.40);
+
   for (let i = 0; i < G.drones.length; i++) {
     const f = alvos[i]; if (!f) continue;
-    /* balanço de leve, com fase própria por drone: parados, eles respiram
-       em vez de ficarem cravados no lugar */
-    const balanco = Math.sin(t/620 + i*1.9) * 2.2;
-    const fy = f.fy + balanco;
-    const tx = p.x + f.fx*cos - fy*sin;
-    const ty = p.y + f.fx*sin + fy*cos;
-
-    let d0 = dronePos[i];
-    if (!d0) {
-      /* cada um persegue a formação num ritmo um pouco diferente, senão os
-         dez se mexem como uma peça só */
-      d0 = dronePos[i] = { x: tx, y: ty, ang: p.ang, atraso: 0.15 + (i % 5) * 0.018 };
-    }
-    if (d0.ang == null) { d0.ang = p.ang; d0.atraso = 0.15 + (i % 5) * 0.018; }
-
-    const x0 = d0.x, y0 = d0.y;
-    d0.x += (tx - d0.x) * d0.atraso;
-    d0.y += (ty - d0.y) * d0.atraso;
-
-    /* O nariz segue o próprio deslocamento, não o da nave. Numa curva o drone
-       abre para fora, e é isso que dá o atraso natural — antes ele girava no
-       mesmo quadro que você, e parecia soldado na lateral. Quase parado, ele
-       volta a se alinhar com a nave. */
-    const vx = d0.x - x0, vy = d0.y - y0;
-    const alvoAng = Math.hypot(vx, vy) > 0.35 ? Math.atan2(vy, vx) : p.ang;
-    d0.ang = anguloSuave(d0.ang, alvoAng, 0.11);
-
-    desenharDrone(d0.x, d0.y, d0.ang, G.drones[i]);
+    const fx = f.fx * puxa, fy = f.fy * puxa;
+    const tx = p.x + fx*cos - fy*sin;
+    const ty = p.y + fx*sin + fy*cos;
+    if (!dronePos[i]) dronePos[i] = { x: tx, y: ty };
+    dronePos[i].x += (tx - dronePos[i].x) * 0.22;
+    dronePos[i].y += (ty - dronePos[i].y) * 0.22;
+    desenharDrone(dronePos[i].x, dronePos[i].y, p.ang, G.drones[i], inc);
   }
   if (dronePos.length > G.drones.length) dronePos.length = G.drones.length;
 }
 
-function desenharDrone(x, y, ang, d) {
+function desenharDrone(x, y, ang, d, inc) {
   const dt = DRONE_TIPOS[d.tipo], nv = droneNivel(d);
   const r = (dt.unico ? 9 : d.tipo === "inovat" ? 7.5 : 6) + nv * 0.35;
   // os quatro drones têm figura própria, vinda de modelo 3D
@@ -3967,6 +3957,13 @@ function desenharDrone(x, y, ang, d) {
             : d.tipo === "zeus"     ? spriteZeus : null;
   const comSprite = !!fig && fig.complete && fig.naturalWidth > 0;
   ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  /* Mesma trucagem de curva usada nas naves de figura única: um deslocamento
+     pequeno mais um achatamento vertical fazem o drone parecer deitar para o
+     lado para onde a nave está virando. */
+  if (inc) {
+    ctx.translate(0, -inc * r * 0.22);
+    ctx.scale(1, 1 - Math.abs(inc) * 0.20);
+  }
 
   // o halo colorido só faz sentido nos desenhados a vetor: no modelo ele
   // vira um brilho falso em volta e tira o ar de peça de metal
