@@ -1,0 +1,57 @@
+MODELOS 3D — NÃO APAGAR
+=======================
+
+São os arquivos .glb de onde saem todas as figuras do jogo.
+O jogo publicado NÃO usa nenhum deles: ele só carrega os .png
+que eu gero a partir daqui.
+
+Mas eu preciso deles sempre que for:
+  - refazer um sprite com outro tamanho, cor ou iluminação
+  - assar as tiras de giro da loja
+  - corrigir orientação de alguma nave
+
+Se apagar, essas mudanças ficam impossíveis sem você baixar os
+modelos de novo.
+
+QUAL MODELO VIRA O QUÊ
+----------------------
+
+  faisca.glb                              -> nave-faisca.png  + giro-faisca.png
+  lamina.glb                              -> nave-lamina.png  + giro-lamina.png
+  sentinela.glb                           -> nave-sentinela.png + giro-sentinela.png
+  Devastador.glb                          -> nave-devastador.png + giro-devastador.png
+  red_goliath_spaceship_-_darkorbit_game.glb -> nave-tita.png + giro-tita.png   (é a Titã)
+
+  androiddemo.glb                         -> drone-android.png  + giro-android.png
+  drone inovat.glb                        -> drone-inovat.png   + giro-inovat.png
+  droneherculerprincilpal.glb             -> drone-hercules.png + giro-hercules.png
+  dronezeus.glb                           -> drone-zeus.png     + giro-zeus.png
+  pet.glb                                 -> pet.png            + giro-pet.png
+
+  Drone Errante.glb                       -> inimigo-errante.png
+  Sonda Corrosiva.glb                     -> inimigo-sonda.png
+  inimigoCorsario.glb                     -> inimigo-corsario.png
+  predador.glb                            -> inimigo-predador.png
+  inimigoseifador.glb                     -> inimigo-ceifador.png
+  inimigodevorador.glb                    -> inimigo-devorador.png
+  inimigoCruzziun .glb                    -> inimigo-cruzziun.png
+  inimigoProtetor .glb                    -> inimigo-protetor.png
+
+  hercules.glb                            -> versão antiga do Hercules
+  portal.glb                              -> portal.png
+
+Esses três últimos (sentinela, hercules e portal) estavam
+perdidos dentro da pasta .git e foram resgatados para cá.
+
+AINDA SEM MODELO
+----------------
+Colosso de Ferro, Aberração, Alquimin e Aniquilador continuam
+desenhados como polígono. Se você arranjar os .glb deles, é só
+colocar aqui e me avisar.
+
+SOBRE O PESO
+------------
+Esta pasta tem cerca de 225 MB e está versionada no git, o que
+inchou o repositório para 165 MB. Vale tirar do controle de
+versão (ver a conversa) — os arquivos continuam no seu disco,
+só param de ir junto para o GitHub.
