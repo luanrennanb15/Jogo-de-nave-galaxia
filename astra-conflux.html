@@ -1789,6 +1789,7 @@ function iniciarSetor(estado) {
     if (G.pet.tem && !G.pet.abatido && G.pet.hp <= 0) G.pet.hp = petMaxHp();
   }
   rastro = []; inclinacaoTita = 0; poeira = []; choques = [];
+  faiscasMotor = []; motor.impulso = 0; motor.arranque = 0;
   tremor = { forca: 0, ate: 0 };
   G.inimigos = []; G.loot = []; G.caixas = []; G.particulas = []; G.danos = []; G.tiros = [];
   G.coleta = null; G.salto = null; G.saltoAlvo = null; G.portalPerto = null;
@@ -3575,25 +3576,30 @@ function luzDaNave(t) {
   if (invisivel()) return;
   const sp = spriteDaNave(G.nave);
   const r = sp ? sp.tam * 0.80 : 46;
-  const forte = p.movendo ? 1 : 0.55;
+  const forca = 0.35 + motor.impulso * 0.65 + motor.arranque * 0.6;
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  // halo fraco em volta da nave
   const gr = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, r);
-  gr.addColorStop(0, `rgba(255,190,130,${0.16*forte})`);
-  gr.addColorStop(0.45, `rgba(255,120,70,${0.09*forte})`);
-  gr.addColorStop(1, "rgba(255,90,50,0)");
+  gr.addColorStop(0, `rgba(${COR_MOTOR.meio},${0.07*forca})`);
+  gr.addColorStop(1, `rgba(${COR_MOTOR.borda},0)`);
   ctx.fillStyle = gr;
   ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, 6.29); ctx.fill();
-
-  // um clarão atrás, no rumo dos motores
-  if (p.movendo) {
-    const tras = p.ang + Math.PI;
-    const bx = p.x + Math.cos(tras)*r*0.42, by = p.y + Math.sin(tras)*r*0.42;
-    const pulso = 0.8 + Math.sin(t/70)*0.2;
-    const g2 = ctx.createRadialGradient(bx, by, 0, bx, by, r*0.62*pulso);
-    g2.addColorStop(0, "rgba(255,220,170,.22)");
-    g2.addColorStop(1, "rgba(255,120,60,0)");
-    ctx.fillStyle = g2;
-    ctx.beginPath(); ctx.arc(bx, by, r*0.62*pulso, 0, 6.29); ctx.fill();
+  // clarão atrás de cada bocal, pulsando
+  if (motor.impulso > 0.02) {
+    for (const lado of [-1, 1]) {
+      const b = bocalDoMotor(lado);
+      const pulso = 0.85 + Math.sin(t/60 + lado) * 0.15;
+      const rr = r * (0.28 + 0.30 * motor.impulso + 0.35 * motor.arranque) * pulso;
+      const g2 = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, rr);
+      g2.addColorStop(0, `rgba(${COR_MOTOR.nucleo},${0.55*Math.min(1,forca)})`);
+      g2.addColorStop(0.35, `rgba(${COR_MOTOR.meio},${0.28*Math.min(1,forca)})`);
+      g2.addColorStop(1, `rgba(${COR_MOTOR.borda},0)`);
+      ctx.fillStyle = g2;
+      ctx.beginPath(); ctx.arc(b.x, b.y, rr, 0, 6.29); ctx.fill();
+    }
   }
+  ctx.restore();
 }
 
 /* Escurece as bordas da tela e puxa o olho para o meio. */
@@ -3910,29 +3916,44 @@ function desenharNaveSprite(s, x, y, ang, t) {
 /* Um bico de chama, desenhado no referencial da nave (bico para +x). `v` vai
    de 0 a 1 e é o quanto o motor está acelerado; `dy` desloca o bico para o
    lado, que é como a nave do jogador ganha os dois. */
-function bicoDeChama(w, h, v, dy, t, semente) {
+function bicoDeChama(w, h, v, dy, t, semente, cor = COR_MOTOR) {
   const base = -w * 0.46;                      // saída do bico, vista de cima
-  const comp = w * (0.20 + 0.34 * v) * (0.85 + Math.sin(t/45 + semente) * 0.15);
-  const alt  = h * 0.20;
-  const g = ctx.createLinearGradient(base, 0, base - comp, 0);
-  g.addColorStop(0,   "rgba(255,236,190,.95)");
-  g.addColorStop(0.35,"rgba(255,150,60,.65)");
-  g.addColorStop(1,   "rgba(255,90,40,0)");
+  const tremo = 0.85 + Math.sin(t/38 + semente) * 0.10 + Math.sin(t/17 + semente*3) * 0.05;
+  const comp = w * (0.16 + 0.42 * v) * tremo;
+  const alt  = h * (0.17 + 0.05 * v);
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  // corpo azul
+  let g = ctx.createLinearGradient(base, 0, base - comp, 0);
+  g.addColorStop(0,    `rgba(${cor.meio},.85)`);
+  g.addColorStop(0.45, `rgba(${cor.borda},.55)`);
+  g.addColorStop(1,    `rgba(${cor.borda},0)`);
   ctx.fillStyle = g;
   ctx.beginPath();
   ctx.moveTo(base, dy - alt/2);
-  ctx.lineTo(base - comp, dy);
-  ctx.lineTo(base, dy + alt/2);
+  ctx.quadraticCurveTo(base - comp*0.45, dy - alt*0.42, base - comp, dy);
+  ctx.quadraticCurveTo(base - comp*0.45, dy + alt*0.42, base, dy + alt/2);
   ctx.closePath(); ctx.fill();
+  // núcleo branco-azulado, mais curto
+  const cn = comp * 0.45, an = alt * 0.45;
+  g = ctx.createLinearGradient(base, 0, base - cn, 0);
+  g.addColorStop(0, `rgba(${cor.nucleo},.95)`);
+  g.addColorStop(1, `rgba(${cor.meio},0)`);
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.moveTo(base, dy - an/2);
+  ctx.quadraticCurveTo(base - cn*0.5, dy - an*0.4, base - cn, dy);
+  ctx.quadraticCurveTo(base - cn*0.5, dy + an*0.4, base, dy + an/2);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
 }
 
 /* Jato saindo por trás, crescendo com a velocidade. A sua nave tem dois. */
 function chamaDoMotor(w, h, t) {
-  const p = G.player;
-  const v = p.movendo ? clamp(speedTotal() / 4, 0.25, 1) : 0;
-  if (v <= 0) return;
+  const v = clamp(motor.impulso + motor.arranque * 0.5, 0, 1.3);
+  if (v <= 0.03) return;
   bicoDeChama(w, h, v, -h*0.16, t, 0);
-  bicoDeChama(w, h, v,  h*0.16, t, 0);
+  bicoDeChama(w, h, v,  h*0.16, t, 1.7);
 }
 
 function desenharNave(x,y,ang,cor,tam) {
@@ -4078,37 +4099,101 @@ function atualizarInclinacao(giro, dt, lateral, mirando) {
 /* Esteira: pontinhos que ficam para trás enquanto a nave anda e vão sumindo. */
 let rastro = [];
 const RASTRO_MAX = 26;
+
+/* ===================== MOTOR =====================
+   impulso: 0 parado .. 1 velocidade máxima, suavizado (sobe rápido, desce
+   devagar). arranque: o quanto a nave está ganhando velocidade AGORA — dá o
+   "acende" quando ela sai do lugar. Os dois mandam no tamanho da chama, no
+   brilho e nas partículas. Tudo azul e somado à cena ("lighter"), que é o
+   que faz parecer luz em vez de tinta. */
+const motor = { impulso: 0, arranque: 0 };
+let faiscasMotor = [];
+const FAISCAS_MAX = 140;
+const COR_MOTOR = { nucleo: "235,250,255", meio: "120,205,255", borda: "40,120,255" };
+/* inimigos continuam com chama quente, para não confundir com a sua */
+const COR_MOTOR_INIMIGO = { nucleo: "255,240,210", meio: "255,160,70", borda: "255,80,30" };
+
+/* posição de um bocal no mundo. lado: −1 ou +1. Bate com a chama desenhada:
+   mesmo recuo (−0,46 do comprimento) e mesma abertura (±0,16 da altura). */
+function bocalDoMotor(lado) {
+  const p = G.player, sp = spriteDaNave(G.nave);
+  const w = sp ? sp.tam * (sp.mold || 1) : 30, h = sp ? w * sp.alt / sp.larg : 20;
+  const lx = -w * 0.46, ly = (sp ? h * 0.16 : 0) * lado;
+  const c = Math.cos(p.ang), sn = Math.sin(p.ang);
+  const ci = sp ? inclDaNave(G.nave) : null;
+  const ky = ci ? ci.cosInc : 1;
+  return { x: p.x + lx*c - ly*sn, y: p.y + (lx*sn + ly*c) * ky };
+}
 function alimentarRastro(dt) {
   const p = G.player;
   if (!p) return;
-  if (p.movendo && !invisivel() && !G.morto) {
-    const tras = p.ang + Math.PI;
-    const sp = spriteDaNave(G.nave);
-    const d = sp ? sp.tam * 0.44 : 15;
-    const ci = sp ? inclDaNave(G.nave) : null;
-    const ky = ci ? ci.cosInc : 1;            // câmera inclinada achata o eixo vertical
-    for (const lado of (sp ? [-1, 1] : [0])) {
-      rastro.push({
-        x: p.x + Math.cos(tras) * d + Math.cos(tras + Math.PI/2) * lado * 9,
-        y: p.y + (Math.sin(tras) * d + Math.sin(tras + Math.PI/2) * lado * 9) * ky,
-        t: G.tempo,
-      });
+  const ativo = p.movendo && !invisivel() && !G.morto;
+
+  // impulso e arranque
+  const alvo = ativo ? clamp(speedTotal() / 4, 0.35, 1) : 0;
+  const antes = motor.impulso;
+  const k = alvo > antes ? 0.07 : 0.035;
+  motor.impulso += (alvo - antes) * Math.min(1, k * dt / 16);
+  const ganho = Math.max(0, motor.impulso - antes) * 16 / Math.max(1, dt);
+  motor.arranque += (clamp(ganho * 18, 0, 1) - motor.arranque) * Math.min(1, 0.12 * dt / 16);
+
+  if (ativo) {
+    for (const lado of [-1, 1]) {
+      const b = bocalDoMotor(lado);
+      rastro.push({ x: b.x, y: b.y, t: G.tempo, lado, f: motor.impulso });
+    }
+    // partículas: mais quanto mais rápido e no arranque
+    const taxa = (0.35 + motor.impulso * 0.9 + motor.arranque * 1.6) * dt / 16;
+    for (const lado of [-1, 1]) {
+      let n = taxa;
+      while (n > 0) {
+        if (n < 1 && Math.random() > n) break;
+        n -= 1;
+        if (faiscasMotor.length >= FAISCAS_MAX) faiscasMotor.shift();
+        const b = bocalDoMotor(lado);
+        const tras = p.ang + Math.PI + rnd(-0.45, 0.45);
+        const v = rnd(0.6, 1.8) * (0.6 + motor.impulso);
+        faiscasMotor.push({ x: b.x, y: b.y, vx: Math.cos(tras)*v, vy: Math.sin(tras)*v,
+                            t: G.tempo, vida: rnd(260, 620), r: rnd(0.7, 1.9) });
+      }
     }
   }
   const limite = G.tempo - 520;
   while (rastro.length && rastro[0].t < limite) rastro.shift();
   if (rastro.length > RASTRO_MAX * 2) rastro.splice(0, rastro.length - RASTRO_MAX * 2);
+
+  // move e apaga as partículas
+  for (const f of faiscasMotor) { f.x += f.vx * dt / 16; f.y += f.vy * dt / 16; f.vx *= 0.97; f.vy *= 0.97; }
+  faiscasMotor = faiscasMotor.filter(f => G.tempo - f.t < f.vida);
 }
 function desenharRastro() {
-  if (!rastro.length) return;
-  for (const r of rastro) {
-    const k = 1 - (G.tempo - r.t) / 520;
-    if (k <= 0) continue;
-    ctx.globalAlpha = k * 0.42;
-    ctx.fillStyle = k > 0.6 ? "#ffd7a0" : "#ff8a4d";
-    ctx.beginPath(); ctx.arc(r.x, r.y, 1.2 + k * 3.4, 0, 6.29); ctx.fill();
+  ctx.save();
+  ctx.globalCompositeOperation = "lighter";
+  ctx.lineCap = "round";
+  // fita de energia, uma por bocal: mais forte quanto mais rápido
+  for (const lado of [-1, 1]) {
+    const pts = rastro.filter(r => r.lado === lado);
+    for (let i = 1; i < pts.length; i++) {
+      const a = pts[i-1], b = pts[i];
+      const k = 1 - (G.tempo - b.t) / 520;
+      if (k <= 0) continue;
+      const f = b.f * b.f;                       // só aparece de verdade em alta
+      ctx.strokeStyle = `rgba(${COR_MOTOR.borda},${0.30 * k * f})`;
+      ctx.lineWidth = 1 + 5 * k;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+      ctx.strokeStyle = `rgba(${COR_MOTOR.meio},${0.55 * k * f})`;
+      ctx.lineWidth = 0.6 + 1.8 * k;
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    }
   }
-  ctx.globalAlpha = 1;
+  // partículas soltas dos motores
+  for (const f of faiscasMotor) {
+    const k = 1 - (G.tempo - f.t) / f.vida;
+    if (k <= 0) continue;
+    ctx.fillStyle = k > 0.55 ? `rgba(${COR_MOTOR.nucleo},${0.9*k})` : `rgba(${COR_MOTOR.meio},${0.8*k})`;
+    ctx.beginPath(); ctx.arc(f.x, f.y, f.r * (0.5 + k * 0.7), 0, 6.29); ctx.fill();
+  }
+  ctx.restore();
 }
 
 /* Esteira dos inimigos: mesma ideia da sua, só que cada bicho carrega a dele
@@ -4506,7 +4591,7 @@ function desenharInimigo(en, t) {
     /* Um motor só, no meio da traseira, com a mesma chama das suas naves.
        Parado, motor apagado: não desenha nada. A semente tira o sincronismo
        para o bando inteiro não pulsar junto. */
-    if (en.andando) bicoDeChama(w, h, clamp(ed.speed / 3, 0.25, 1), 0, t, en.x);
+    if (en.andando) bicoDeChama(w, h, clamp(ed.speed / 3, 0.25, 1), 0, t, en.x, COR_MOTOR_INIMIGO);
     // curva fingida, igual às naves de figura única: achata e desloca
     ctx.translate(0, -inc * h * 0.07);
     ctx.scale(1, 1 - Math.abs(inc) * 0.22);
