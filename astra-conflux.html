@@ -4238,7 +4238,7 @@ function posFreio(o, s) {
 /* ---- mísseis e foguetes ---- */
 function desenharMissil(b) {
   const missil = b.forma === "missil";
-  const L = missil ? 15 : 13, W = missil ? 3.4 : 3.1;
+  const L = missil ? 23 : 21, W = missil ? 3.3 : 3.0;      // mais compridos (eram 15 e 13)
   const co = Math.cos(b.ang), sn = Math.sin(b.ang);
   const cor = b.cor || "#ffb347";
   const br = b.branco != null ? b.branco : 0.6;          // força do branco (núcleo da chama e ponta)
@@ -4266,7 +4266,7 @@ function desenharMissil(b) {
   }
   // chama do motor
   ctx.translate(b.x, b.y); ctx.rotate(b.ang);
-  const pisca = 0.85 + Math.random() * 0.3, cl = L * 1.05 * pisca;
+  const pisca = 0.85 + Math.random() * 0.3, cl = 14 * pisca;
   let g = ctx.createRadialGradient(-L * 0.55, 0, 0, -L * 0.55, 0, W * 2.6);
   g.addColorStop(0, corComAlfa(cor, 0.32)); g.addColorStop(1, corComAlfa(cor, 0));
   ctx.fillStyle = g; ctx.beginPath(); ctx.arc(-L * 0.55, 0, W * 2.6, 0, 6.29); ctx.fill();
