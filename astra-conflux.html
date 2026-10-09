@@ -2788,10 +2788,10 @@ function atualizar(dt) {
    alternando entre os dois lados. Nave sem entrada usa CANHAO_PADRAO. */
 const CANHOES = {
   faisca:     { x: 0.12, y: 0.40 },     // os dois canos nas pontas das asas
-  lamina:     { x: 0.30, y: 0.24 },
-  sentinela:  { x: 0.32, y: 0.22 },
-  devastador: { x: 0.30, y: 0.30 },
-  tita:       { x: 0.34, y: 0.30 },
+  lamina:     { x: 0.14, y: 0.19 },     // os dois canhões compridos dos lados
+  sentinela:  { x: 0.20, y: 0.13 },     // as asinhas da frente
+  devastador: { x: 0.34, y: 0.20 },     // a frente dos dois braços laterais
+  tita:       { x: 0.48, y: 0.19 },     // as pontas das duas garras
 };
 const CANHAO_PADRAO = { x: 0.40, y: 0.12 };
 let ladoCanhao = 1;
@@ -2802,10 +2802,10 @@ let ladoCanhao = 1;
    x = para a frente, y = para o lado, em frações do comprimento da nave. */
 const SALVAS = {
   faisca:     [[{ x: 0.12, y: -0.40 }, { x: 0.12, y: 0.40 }], [{ x: 0.50, y: 0 }]],
-  lamina:     [[{ x: 0.30, y: -0.24 }, { x: 0.30, y: 0.24 }], [{ x: 0.50, y: 0 }]],
-  sentinela:  [[{ x: 0.32, y: -0.22 }, { x: 0.32, y: 0.22 }], [{ x: 0.50, y: 0 }]],
-  devastador: [[{ x: 0.30, y: -0.30 }, { x: 0.30, y: 0.30 }], [{ x: 0.50, y: 0 }]],
-  tita:       [[{ x: 0.34, y: -0.30 }, { x: 0.34, y: 0.30 }], [{ x: 0.50, y: 0 }]],
+  lamina:     [[{ x: 0.14, y: -0.19 }, { x: 0.14, y: 0.19 }], [{ x: 0.48, y: 0 }]],
+  sentinela:  [[{ x: 0.20, y: -0.13 }, { x: 0.20, y: 0.13 }], [{ x: 0.46, y: 0 }]],
+  devastador: [[{ x: 0.34, y: -0.20 }, { x: 0.34, y: 0.20 }], [{ x: 0.06, y: 0 }]],
+  tita:       [[{ x: 0.48, y: -0.19 }, { x: 0.48, y: 0.19 }], [{ x: 0.06, y: 0 }]],
 };
 const SALVA_PADRAO = [[{ x: 0.40, y: -0.12 }, { x: 0.40, y: 0.12 }], [{ x: 0.50, y: 0 }]];
 let grupoSalva = 0;
@@ -4669,8 +4669,8 @@ function formaDeChama(base, dy, L, A) {
   ctx.quadraticCurveTo(base + A*0.45, dy, base, dy - A/2);
   ctx.closePath();
 }
-function bicoDeChama(w, h, v, dy, t, semente, cor = COR_MOTOR) {
-  const base = -w * 0.46;                      // saída do bico, vista de cima
+function bicoDeChama(w, h, v, dy, t, semente, cor = COR_MOTOR, recuo = 0.46) {
+  const base = -w * recuo;                     // saída do bico, vista de cima
   const tremo = 0.85 + Math.sin(t/38 + semente) * 0.10 + Math.sin(t/17 + semente*3) * 0.05;
   const comp = w * (0.12 + 0.32 * v) * tremo * TAMANHO_CHAMA;   // comprimento
   const alt  = h * (0.15 + 0.04 * v) * TAMANHO_CHAMA;           // largura
@@ -4707,11 +4707,12 @@ function chamaDoMotor(w, h, t) {
   const dobra = 0;
   const v = clamp(motor.impulso + motor.arranque * 0.5, 0, 1.3);
   if (v <= 0.03) return;
-  const base = -w * 0.46;
-  for (const [dy, sem] of [[-h*0.16, 0], [h*0.16, 1.7]]) {
+  const sp = spriteDaNave(G.nave), m = motorDaNave();
+  const tam = sp ? sp.tam : w, base = -m.x * tam, ab = m.y * tam;
+  for (const [dy, sem] of [[-ab, 0], [ab, 1.7]]) {
     ctx.save();
     ctx.translate(base, dy); ctx.rotate(dobra); ctx.translate(-base, -dy);
-    bicoDeChama(w, h, v, dy, t, sem);
+    bicoDeChama(w, h, v, dy, t, sem, COR_MOTOR, m.x * tam / w);
     ctx.restore();
   }
 }
@@ -4772,8 +4773,16 @@ const SPRITE_NAVE = {
    enquanto as folhas carregam. As folhas só são baixadas quando a nave entra
    em uso, para não pesar no celular. */
 const INCL_NAVE = {
-  faisca: { arqs:Array.from({ length: 13 }, (_, i) => "nave-faisca-" + i + ".webp"),
-            N:32, cols:8, fw:196, fh:190, px:2.5, inc:40 },
+  faisca:     { arqs:Array.from({ length: 13 }, (_, i) => "nave-faisca-" + i + ".webp"),
+                N:32, cols:8, fw:196, fh:190, px:2.5, inc:40 },
+  lamina:     { arqs:Array.from({ length: 13 }, (_, i) => "nave-lamina-" + i + ".webp"),
+                N:32, cols:8, fw:198, fh:184, px:2.5, inc:40 },
+  sentinela:  { arqs:Array.from({ length: 13 }, (_, i) => "nave-sentinela-" + i + ".webp"),
+                N:32, cols:8, fw:262, fh:260, px:2.5, inc:40 },
+  devastador: { arqs:Array.from({ length: 13 }, (_, i) => "nave-devastador-" + i + ".webp"),
+                N:32, cols:8, fw:304, fh:302, px:2.5, inc:40 },
+  tita:       { arqs:Array.from({ length: 13 }, (_, i) => "nave-tita-" + i + ".webp"),
+                N:32, cols:8, fw:272, fh:226, px:2.5, inc:40 },
 };
 function inclDaNave(id) {
   const c = INCL_NAVE[id];
@@ -4896,10 +4905,20 @@ function chamaRelativa() {
 
 /* posição de um bocal no mundo. lado: −1 ou +1. Bate com a chama desenhada:
    mesmo recuo (−0,46 do comprimento) e mesma abertura (±0,16 da altura). */
+/* Onde ficam os dois bocais de cada nave, em frações do comprimento (`tam`):
+   x para trás a partir do centro, y para o lado. Medidos nas folhas novas. */
+const MOTOR_NAVE = {
+  faisca:     { x: 0.506, y: 0.113 },
+  lamina:     { x: 0.50,  y: 0.19 },
+  sentinela:  { x: 0.48,  y: 0.08 },
+  devastador: { x: 0.40,  y: 0.05 },
+  tita:       { x: 0.50,  y: 0.05 },
+};
+const motorDaNave = () => MOTOR_NAVE[G.nave] || MOTOR_NAVE.faisca;
 function bocalDoMotor(lado) {
-  const p = G.player, sp = spriteDaNave(G.nave);
-  const w = sp ? sp.tam * (sp.mold || 1) : 30, h = sp ? w * sp.alt / sp.larg : 20;
-  const lx = -w * 0.46, ly = (sp ? h * 0.16 : 0) * lado;
+  const p = G.player, sp = spriteDaNave(G.nave), m = motorDaNave();
+  const tam = sp ? sp.tam : 30;
+  const lx = -m.x * tam, ly = m.y * tam * lado;
   const c = Math.cos(p.ang), sn = Math.sin(p.ang);
   const ci = sp ? inclDaNave(G.nave) : null;
   const ky = ci ? ci.cosInc : 1;
