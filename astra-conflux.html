@@ -1790,6 +1790,7 @@ function iniciarSetor(estado) {
   }
   rastro = []; inclinacaoTita = 0; poeira = []; choques = [];
   faiscasMotor = []; motor.impulso = 0; motor.arranque = 0;
+  impactos = []; danoParticulas = [];
   tremor = { forca: 0, ate: 0 };
   G.inimigos = []; G.loot = []; G.caixas = []; G.particulas = []; G.danos = []; G.tiros = [];
   G.coleta = null; G.salto = null; G.saltoAlvo = null; G.portalPerto = null;
@@ -2367,6 +2368,7 @@ function atualizar(dt) {
   const lateral = (mirando && rumo !== null) ? Math.sin(rumo - p.ang) : 0;
   atualizarInclinacao(giro * 16 / Math.max(1, dt), dt, lateral, mirando);
   alimentarRastro(dt);
+  alimentarDano(dt);
 
   // --- regeneração (em qualquer lugar do mapa) ---
   const seguro = emSeguranca();
@@ -2650,7 +2652,7 @@ function atualizar(dt) {
         // na zona segura o tiro só machuca se vier de quem você está atacando —
         // inclusive os que já estavam no ar quando você entrou
         const liberado = (!seguro || (b.de && T < (b.de.permitido || 0))) && !invulneravel();
-        if (liberado) { danoNoJogador(b.dano, b.de); faisca(p.x, p.y, b.cor); }
+        if (liberado) { danoNoJogador(b.dano, b.de, Math.atan2(b.y - p.y, b.x - p.x)); faisca(p.x, p.y, b.cor); }
         else { faisca(b.x, b.y, "#7ee8ff"); beep(880, 0.02); }
       }
       G.tiros.splice(i,1);
@@ -3129,7 +3131,7 @@ function alternarPet() {
   }
 }
 
-function danoNoJogador(dano, autor) {
+function danoNoJogador(dano, autor, angImpacto) {
   const p = G.player;
   if (G.morto || invulneravel()) return;
   if (autor) p.ultimoAgressor = autor;
@@ -3142,6 +3144,7 @@ function danoNoJogador(dano, autor) {
   p.sh -= absorvido;
   const noCasco = dano - absorvido;      // o que o escudo não segurou
   p.hp -= noCasco;
+  registrarImpacto(angImpacto, absorvido, noCasco);
 
   numeroDano(p.x, p.y - 24, "-" + fmt(dano), "#ff8a8a");
   sacudir(3 + Math.min(7, dano / Math.max(1, maxHp()) * 90));   // a tela sente a pancada
@@ -3701,6 +3704,7 @@ function desenhar(t) {
     }
   }
   desenharOndas(t);
+  if (!G.morto) { desenharDano(); desenharEscudo(t); }
   if (!G.morto) desenharStatusJogador();
 
   if (dist(p.x,p.y,p.dx,p.dy) > 12) {
@@ -4333,6 +4337,205 @@ function desenharColeta(t) {
    é só enfeite. Ele acende rápido e apaga bem devagar, o que dá aquele
    sumiço suave quando você deixa a zona em vez de o texto piscar fora. */
 let luzNeutra = 0;
+
+/* ===================== ESCUDO E DANO =====================
+   - escudo energético: bolha de hexágonos que acende quando um tiro bate e o
+     escudo segura alguma coisa, mais forte no ponto do impacto
+   - ondas: anéis que se abrem a partir do ponto atingido (azuis no escudo,
+     laranja quando o tiro passa e pega no casco)
+   - escudo baixo (< 25%): luzes vermelhas piscando nas laterais da nave
+   - casco ferido: fumaça abaixo de 60% de vida, faíscas abaixo de 35% e
+     fogo abaixo de 15% — mais forte quanto pior */
+const ESCUDO_VIDA_FX   = 420;    // ms que a bolha fica acesa depois do tiro
+const ESCUDO_BAIXO     = 0.25;   // abaixo disso as luzes de alerta piscam
+const DANO_FUMACA      = 0.60;   // vida (fração) em que começa a fumaça
+const DANO_FAISCA      = 0.35;   // ...as faíscas
+const DANO_FOGO        = 0.15;   // ...o fogo
+let impactos = [];               // { ang, t, escudo, casco }
+let danoParticulas = [];
+const DANO_PART_MAX = 160;
+
+function registrarImpacto(ang, noEscudo, noCasco) {
+  if (ang == null || isNaN(ang)) ang = rnd(0, Math.PI * 2);
+  impactos.push({ ang, t: G.tempo, escudo: noEscudo > 0, casco: noCasco > 0 });
+  if (impactos.length > 12) impactos.shift();
+}
+
+/* raio da bolha e achatamento da câmera inclinada */
+function geometriaEscudo() {
+  const sp = spriteDaNave(G.nave);
+  const ci = sp ? inclDaNave(G.nave) : null;
+  return { R: sp ? sp.tam * 0.66 : 26, ky: ci ? ci.cosInc : 1, sp };
+}
+
+/* textura de hexágonos, feita uma vez: grade fina, mais forte na borda */
+let texHex = null;
+function texturaHex() {
+  if (texHex) return texHex;
+  const N = 256, c = document.createElement("canvas"); c.width = c.height = N;
+  const x = c.getContext("2d"), r = 13, hh = r * Math.sqrt(3) / 2;
+  x.strokeStyle = "rgba(150,225,255,1)"; x.lineWidth = 1.6;
+  for (let row = -1, y = 0; y < N + r; row++, y = row * hh) {
+    for (let col = -1; col * r * 3 < N + r * 3; col++) {
+      const cx = col * r * 3 + (row % 2 ? r * 1.5 : 0), cy = y;
+      x.beginPath();
+      for (let k = 0; k < 6; k++) {
+        const a = Math.PI / 3 * k;
+        const px = cx + Math.cos(a) * r * 0.92, py = cy + Math.sin(a) * r * 0.92;
+        k ? x.lineTo(px, py) : x.moveTo(px, py);
+      }
+      x.closePath(); x.stroke();
+    }
+  }
+  // recorta num círculo: quase invisível no meio, forte na borda
+  const g = x.createRadialGradient(N/2, N/2, 0, N/2, N/2, N/2);
+  g.addColorStop(0, "rgba(0,0,0,.18)"); g.addColorStop(0.72, "rgba(0,0,0,.55)");
+  g.addColorStop(0.97, "rgba(0,0,0,1)"); g.addColorStop(1, "rgba(0,0,0,0)");
+  x.globalCompositeOperation = "destination-in";
+  x.fillStyle = g; x.fillRect(0, 0, N, N);
+  return (texHex = c);
+}
+
+function desenharEscudo(t) {
+  const p = G.player;
+  if (G.morto || invisivel()) return;
+  impactos = impactos.filter(im => G.tempo - im.t < 700);
+  const { R, ky } = geometriaEscudo();
+  const shMax = maxShield(), fr = shMax > 0 ? p.sh / shMax : 0;
+
+  ctx.save();
+  ctx.translate(p.x, p.y); ctx.scale(1, ky);
+  ctx.globalCompositeOperation = "lighter";
+
+  // bolha: soma a luz dos impactos recentes que o escudo segurou
+  let acesa = 0;
+  for (const im of impactos) if (im.escudo) acesa = Math.max(acesa, 1 - (G.tempo - im.t) / ESCUDO_VIDA_FX);
+  if (acesa > 0) {
+    const a0 = acesa * (0.35 + 0.65 * Math.max(0.25, fr));
+    ctx.globalAlpha = a0 * 0.85;
+    ctx.drawImage(texturaHex(), -R, -R, R * 2, R * 2);
+    const g = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
+    g.addColorStop(0, "rgba(60,170,255,0)"); g.addColorStop(0.8, "rgba(70,190,255,.25)");
+    g.addColorStop(1, "rgba(140,230,255,.55)");
+    ctx.globalAlpha = a0; ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.29); ctx.fill();
+  }
+
+  // ondas e clarão em cada ponto atingido
+  for (const im of impactos) {
+    const idade = (G.tempo - im.t) / 520;
+    if (idade >= 1) continue;
+    const noEscudo = im.escudo;
+    const dist = noEscudo ? R : R * 0.35;            // escudo segura na borda; casco, perto do meio
+    const ix = Math.cos(im.ang) * dist, iy = Math.sin(im.ang) * dist;
+    const cor = noEscudo ? "120,215,255" : "255,150,70";
+    // clarão no ponto
+    const rc = R * (0.26 + idade * 0.18);
+    const g = ctx.createRadialGradient(ix, iy, 0, ix, iy, rc);
+    g.addColorStop(0, `rgba(${noEscudo ? "230,250,255" : "255,230,180"},${0.85 * (1 - idade)})`);
+    g.addColorStop(1, `rgba(${cor},0)`);
+    ctx.globalAlpha = 1; ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(ix, iy, rc, 0, 6.29); ctx.fill();
+    // três anéis abrindo, recortados dentro da bolha
+    ctx.save();
+    if (noEscudo) { ctx.beginPath(); ctx.arc(0, 0, R * 1.02, 0, 6.29); ctx.clip(); }
+    for (let k = 0; k < 3; k++) {
+      const f = idade - k * 0.16;
+      if (f <= 0 || f >= 1) continue;
+      ctx.strokeStyle = `rgba(${cor},${0.75 * (1 - f)})`;
+      ctx.lineWidth = 2.6 * (1 - f) + 0.4;
+      ctx.beginPath(); ctx.arc(ix, iy, R * (0.12 + f * (noEscudo ? 1.25 : 0.7)), 0, 6.29); ctx.stroke();
+    }
+    ctx.restore();
+  }
+  ctx.restore();
+
+  // escudo baixo: luzes de alerta piscando nas laterais
+  if (shMax > 0 && fr < ESCUDO_BAIXO) {
+    const pisca = Math.sin(G.tempo / 95) > 0.1;
+    if (pisca) {
+      const sp = spriteDaNave(G.nave);
+      const w = sp ? sp.tam * (sp.mold || 1) : 30, h = sp ? w * sp.alt / sp.larg : 20;
+      const c = Math.cos(p.ang), sn = Math.sin(p.ang);
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      for (const lado of [-1, 1]) {
+        const lx = -w * 0.08, ly = h * 0.34 * lado;
+        const x = p.x + lx*c - ly*sn, y = p.y + (lx*sn + ly*c) * ky;
+        const g = ctx.createRadialGradient(x, y, 0, x, y, 9);
+        g.addColorStop(0, "rgba(255,235,225,.95)"); g.addColorStop(0.35, "rgba(255,60,50,.7)");
+        g.addColorStop(1, "rgba(255,30,30,0)");
+        ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, 9, 0, 6.29); ctx.fill();
+      }
+      ctx.restore();
+    }
+  }
+}
+
+/* fumaça, faíscas e fogo saindo do casco ferido. Chamado no update. */
+function alimentarDano(dt) {
+  const p = G.player;
+  if (!p || G.morto) { danoParticulas = []; return; }
+  const f = clamp(p.hp / Math.max(1, maxHp()), 0, 1);
+  const sp = spriteDaNave(G.nave);
+  const { ky } = geometriaEscudo();
+  const w = sp ? sp.tam : 30, h = sp ? w * 0.55 : 18;
+  const c = Math.cos(p.ang), sn = Math.sin(p.ang);
+  const ponto = () => {                                   // um lugar qualquer do casco
+    const lx = rnd(-0.38, 0.22) * w, ly = rnd(-0.28, 0.28) * h;
+    return { x: p.x + lx*c - ly*sn, y: p.y + (lx*sn + ly*c) * ky };
+  };
+  const tras = (p.movendo && p.rumo != null ? p.rumo : p.ang) + Math.PI;
+  const solta = (tipo, n) => {
+    for (let i = 0; i < n; i++) {
+      if (danoParticulas.length >= DANO_PART_MAX) danoParticulas.shift();
+      const o = ponto(), a = tras + rnd(-0.9, 0.9);
+      const v = tipo === "faisca" ? rnd(1.5, 3.5) : rnd(0.2, 0.7);
+      danoParticulas.push({ tipo, x: o.x, y: o.y, vx: Math.cos(a)*v, vy: Math.sin(a)*v, t: G.tempo,
+        vida: tipo === "fumaca" ? rnd(700, 1300) : tipo === "fogo" ? rnd(250, 480) : rnd(180, 380),
+        r: tipo === "fumaca" ? rnd(2.5, 4.5) : tipo === "fogo" ? rnd(2, 3.6) : rnd(0.8, 1.4) });
+    }
+  };
+  const chance = q => { let n = q * dt / 16, k = 0; while (n > 0) { if (n >= 1 || Math.random() < n) k++; n -= 1; } return k; };
+  if (f < DANO_FUMACA) solta("fumaca", chance(0.18 + (DANO_FUMACA - f) * 1.1));
+  if (f < DANO_FAISCA) solta("faisca", chance(0.06 + (DANO_FAISCA - f) * 0.9));
+  if (f < DANO_FOGO)   solta("fogo",   chance(0.35 + (DANO_FOGO - f) * 3));
+  for (const d of danoParticulas) {
+    d.x += d.vx * dt / 16; d.y += d.vy * dt / 16;
+    const atrito = d.tipo === "faisca" ? 0.93 : 0.97;
+    d.vx *= atrito; d.vy *= atrito;
+  }
+  danoParticulas = danoParticulas.filter(d => G.tempo - d.t < d.vida);
+}
+
+function desenharDano() {
+  if (!danoParticulas.length) return;
+  ctx.save();
+  // fumaça: tinta normal, cinza, crescendo e sumindo
+  for (const d of danoParticulas) {
+    if (d.tipo !== "fumaca") continue;
+    const k = (G.tempo - d.t) / d.vida;
+    ctx.globalAlpha = 0.55 * (1 - k) * Math.min(1, k * 6);
+    ctx.fillStyle = k < 0.3 ? "#9a948c" : "#6b6a70";
+    ctx.beginPath(); ctx.arc(d.x, d.y, d.r * (1.2 + k * 2.8), 0, 6.29); ctx.fill();
+  }
+  // faíscas e fogo: luz somada
+  ctx.globalCompositeOperation = "lighter";
+  for (const d of danoParticulas) {
+    if (d.tipo === "fumaca") continue;
+    const k = (G.tempo - d.t) / d.vida;
+    ctx.globalAlpha = 1 - k;
+    if (d.tipo === "faisca") {
+      ctx.strokeStyle = "rgba(255,225,140,1)"; ctx.lineWidth = d.r;
+      ctx.beginPath(); ctx.moveTo(d.x, d.y); ctx.lineTo(d.x - d.vx * 2.2, d.y - d.vy * 2.2); ctx.stroke();
+    } else {
+      const g = ctx.createRadialGradient(d.x, d.y, 0, d.x, d.y, d.r * 2);
+      g.addColorStop(0, "rgba(255,240,190,.95)"); g.addColorStop(0.4, "rgba(255,140,40,.7)");
+      g.addColorStop(1, "rgba(255,60,20,0)");
+      ctx.fillStyle = g; ctx.beginPath(); ctx.arc(d.x, d.y, d.r * 2 * (1 - k * 0.4), 0, 6.29); ctx.fill();
+    }
+  }
+  ctx.restore();
+}
 
 function desenharStatusJogador() {
   const p = G.player, hpMax = maxHp(), shMax = maxShield();
