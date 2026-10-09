@@ -2299,6 +2299,105 @@ function luzesPortal(g, t, w, h, cor, carregando) {
   ctx.restore();
 }
 
+/* ---- Via-láctea e poeira escura (estilo do vídeo de referência) ----
+   Uma faixa larga de nuvem cinza-azulada atravessando o setor na diagonal,
+   cheia de estrelinhas e de grãos escuros de poeira na frente dela (os grãos
+   aparecem como silhuetas contra a nuvem clara). Fica bem longe (z .03), e
+   dois véus de grãos escuros soltos andam mais perto, com paralaxe. */
+let _faixa = null;
+function faixaGalactica() {
+  const chave = G.setor;
+  if (_faixa && _faixa.chave === chave) return _faixa.c;
+  if (!texNebulosa.complete || !texNebulosa.naturalWidth || !texPoeira.complete || !texPoeira.naturalWidth) return null;
+  const W = 1200, H = 760, c = document.createElement("canvas"); c.width = W; c.height = H;
+  const x = c.getContext("2d");
+  const ang = -0.42 + h01(G.setor, 3, 3) * 0.3;               // inclinação da faixa
+  const tom = misturarCorHex(paletaAtual().p, "#8fa3a8", 0.65); // cinza-azulado puxando a cor do setor
+  // 1) nuvem: fundo liso claro + textura de nebulosa em duas escalas (somando luz)
+  const tn = tingir(texNebulosa, tom), tp = tingir(texPoeira, "#dfe8ee");
+  x.fillStyle = tom; x.globalAlpha = 0.30; x.fillRect(0, 0, W, H);
+  x.globalCompositeOperation = "lighter";
+  x.globalAlpha = 0.95;
+  for (let i = -100; i < W; i += 560) for (let j = -100; j < H; j += 560) x.drawImage(tn, i, j, 560, 560);
+  x.save(); x.translate(W / 2, H / 2); x.rotate(1.57); x.globalAlpha = 0.7;
+  for (let i = -W; i < W; i += 820) for (let j = -W; j < W; j += 820) x.drawImage(tn, i, j, 820, 820);
+  x.restore();
+  x.globalAlpha = 0.25;
+  for (let i = 0; i < W; i += 300) for (let j = 0; j < H; j += 300) x.drawImage(tp, i, j, 300, 300);
+  // 2) recorta na forma de faixa: mais forte no meio, sumindo nas bordas
+  x.globalCompositeOperation = "destination-in"; x.globalAlpha = 1;
+  x.save(); x.translate(W / 2, H / 2); x.rotate(ang);
+  const g = x.createLinearGradient(0, -H * 0.55, 0, H * 0.55);
+  g.addColorStop(0, "rgba(0,0,0,0)"); g.addColorStop(0.28, "rgba(0,0,0,.35)"); g.addColorStop(0.5, "rgba(0,0,0,.85)");
+  g.addColorStop(0.72, "rgba(0,0,0,.35)"); g.addColorStop(1, "rgba(0,0,0,0)");
+  x.fillStyle = g; x.fillRect(-W, -H * 0.55, W * 2, H * 1.1);
+  // núcleo mais claro, fino
+  x.globalCompositeOperation = "lighter";
+  const g2 = x.createLinearGradient(0, -H * 0.16, 0, H * 0.16);
+  g2.addColorStop(0, "rgba(200,215,220,0)"); g2.addColorStop(0.5, "rgba(200,215,220,.07)"); g2.addColorStop(1, "rgba(200,215,220,0)");
+  x.fillStyle = g2; x.fillRect(-W, -H * 0.16, W * 2, H * 0.32);
+  x.restore();
+  // 3) estrelas de campo concentradas na faixa e grãos escuros por cima
+  x.globalCompositeOperation = "source-over";
+  const pos = (i, k) => {                                   // ponto com densidade maior no meio da faixa
+    const u = (h01(i, k, 11 + G.setor) - 0.5) * W * 1.4;
+    const v = (h01(i, k, 23 + G.setor) + h01(i, k, 37) + h01(i, k, 41) - 1.5) * H * 0.42;
+    return [W / 2 + u * Math.cos(ang) - v * Math.sin(ang), H / 2 + u * Math.sin(ang) + v * Math.cos(ang)];
+  };
+  for (let i = 0; i < 900; i++) {
+    const [px, py] = pos(i, 1), b = h01(i, 2, 5);
+    x.fillStyle = `rgba(235,242,255,${0.25 + b * 0.6})`; x.fillRect(px, py, b > 0.9 ? 1.6 : 0.9, b > 0.9 ? 1.6 : 0.9);
+  }
+  for (let i = 0; i < 1400; i++) {
+    const [px, py] = pos(i, 7), s = 0.8 + Math.pow(h01(i, 8, 9), 3) * 3.4;
+    graoEscuro(x, px, py, s, h01(i, 9, 3), 0.75);
+  }
+  _faixa = { chave, c };
+  return c;
+}
+/* grão de poeira escura: polígono irregular quase preto */
+function graoEscuro(x, px, py, s, sem, alfa) {
+  const n = 5;
+  x.fillStyle = `rgba(6,7,9,${alfa})`;
+  x.beginPath();
+  for (let k = 0; k < n; k++) {
+    const a = k / n * 6.283 + sem * 3, r = s * (0.6 + 0.5 * h01(k, Math.floor(sem * 997), 77));
+    k ? x.lineTo(px + Math.cos(a) * r, py + Math.sin(a) * r) : x.moveTo(px + Math.cos(a) * r, py + Math.sin(a) * r);
+  }
+  x.closePath(); x.fill();
+}
+function desenharFaixa(tre) {
+  const c = faixaGalactica();
+  if (!c) return;
+  const z = 0.03, esc = Math.max(VW / c.width, VH / c.height) * 1.35;
+  const w = c.width * esc, h = c.height * esc;
+  const x = (VW - w) / 2 - ((G.cam.x + tre.x) - WORLD.w / 2) * z, y = (VH - h) / 2 - ((G.cam.y + tre.y) - WORLD.h / 2) * z;
+  ctx.globalAlpha = 0.6; ctx.drawImage(c, x, y, w, h); ctx.globalAlpha = 1;   // discreta, como no vídeo
+}
+/* véus de grãos escuros soltos, repetidos, em duas profundidades */
+const _veuGraos = {};
+function veuGraos(n) {
+  if (_veuGraos[n]) return _veuGraos[n];
+  const c = document.createElement("canvas"); c.width = c.height = 512;
+  const x = c.getContext("2d");
+  const qtd = n === 0 ? 160 : 70;
+  for (let i = 0; i < qtd; i++) {
+    const px = h01(i, n, 101) * 512, py = h01(i, n, 202) * 512;
+    const s = n === 0 ? 0.7 + Math.pow(h01(i, n, 303), 3) * 2.2 : 1.2 + Math.pow(h01(i, n, 303), 3) * 3.6;
+    graoEscuro(x, px, py, s, h01(i, n, 404), n === 0 ? 0.7 : 0.85);
+    if (n === 1 && h01(i, n, 505) > 0.7) {                   // alguns pegam um fio de sol na borda
+      x.fillStyle = "rgba(190,170,150,.35)"; x.fillRect(px - s * 0.5, py - s * 0.6, s * 0.7, 0.6);
+    }
+  }
+  return (_veuGraos[n] = c);
+}
+function desenharVeuGraos(n, z, tre) {
+  const c = veuGraos(n), w = 512, h = 512;
+  let ox = -(((G.cam.x + tre.x) * z) % w); if (ox > 0) ox -= w;
+  let oy = -(((G.cam.y + tre.y) * z) % h); if (oy > 0) oy -= h;
+  for (let x = ox; x < VW; x += w) for (let y = oy; y < VH; y += h) ctx.drawImage(c, x, y);
+}
+
 let planeta = null, lua = null;
 function gerarNebulosa() {
   /* um planeta por setor (o tipo segue a paleta do setor) e às vezes uma lua.
@@ -2308,7 +2407,7 @@ function gerarNebulosa() {
   const z = 0.04, aneis = PLANETA_ANEIS[tipo];
   const r = aneis ? 105 + Math.random() * 40 : 140 + Math.random() * 80;
   const lado = Math.random() < 0.5 ? 0.14 : 0.86;
-  planeta = { tipo, z, r, alfa: 0.80, giro: (Math.random() - 0.5) * 0.3,
+  planeta = { tipo, z, r, alfa: 0.62, giro: (Math.random() - 0.5) * 0.3,
               x: VW * (lado + (Math.random() - 0.5) * 0.12) + WORLD.w / 2 * z,
               y: VH * (0.25 + Math.random() * 0.5) + WORLD.h / 2 * z };
   planetaImg(tipo);
@@ -4079,7 +4178,8 @@ function desenharFundo(t, tre) {
      perto, véus claros de nebulosa que andam mais rápido. */
   const pal = paletaAtual();
   desenharSol(t, tre);
-  camadaFundo(texNebulosa, pal.a, 0.055, 0.50, 2.4, tre);
+  camadaFundo(texNebulosa, pal.a, 0.055, 0.30, 2.4, tre);      // cor do setor, bem sutil
+  desenharFaixa(tre);                                          // via-láctea com poeira escura
   desenharCorpoCeleste(planeta, tre);
   desenharCorpoCeleste(lua, tre);
   /* as camadas novas (faixas escuras e véus claros) vêm pré-misturadas com
@@ -4098,7 +4198,7 @@ function compNebulosa(pal) {
   if (!tb || !te) return null;
   const c = document.createElement("canvas"); c.width = c.height = 512;
   const x = c.getContext("2d");
-  x.globalAlpha = 0.30; x.drawImage(tb, 0, 0);
+  x.globalAlpha = 0.18; x.drawImage(tb, 0, 0);
   x.globalAlpha = 0.42; x.translate(512, 0); x.scale(-1, 1); x.drawImage(te, 0, 0);
   liberarTinta(texNebulosa, "#04050b");
   return (_comp[k] = c);
@@ -4169,7 +4269,7 @@ function desenharVinheta() {
     const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW,VH)*0.34,
                                        VW/2, VH/2, Math.max(VW,VH)*0.78);
     g.addColorStop(0, "rgba(0,0,0,0)");
-    g.addColorStop(1, "rgba(0,0,0,.55)");
+    g.addColorStop(1, "rgba(0,0,0,.72)");
     vinheta = g; vinhetaTam = chave;
   }
   ctx.fillStyle = vinheta; ctx.fillRect(0,0,VW,VH);
@@ -4206,8 +4306,11 @@ function desenhar(t) {
     }
   }
   ctx.globalAlpha = 1;
-  // asteroides e destroços em três profundidades, atrás do jogo
-  for (let ci = 0; ci < CAMADAS_AST.length; ci++) desenharCamadaAst(ci, t, tre);
+  // grãos escuros soltos + asteroides e destroços em três profundidades, atrás do jogo
+  desenharVeuGraos(0, 0.26, tre);
+  desenharCamadaAst(0, t, tre);
+  desenharVeuGraos(1, 0.55, tre);
+  for (let ci = 1; ci < CAMADAS_AST.length; ci++) desenharCamadaAst(ci, t, tre);
 
   ctx.save();
   ctx.translate(-G.cam.x - tre.x, -G.cam.y - tre.y);
