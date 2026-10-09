@@ -814,9 +814,10 @@ const AMMO = {
 const AMMO_ORDER = ["lcb10","lcb20","mcb30","ucb100","rsb300","drno25"];
 
 const ROCKETS = {
-  R310:   { nome:"R-310",    dmg:1000, preco:260 },
-  PLT21:  { nome:"PLT-2021", dmg:2500, preco:950 },
-  PLT30:  { nome:"PLT-3030", dmg:7000, preco:3400 },
+  /* cor: chama e rastro · corpo: cor do foguete · branco: força do brilho branco (0..1) */
+  R310:   { nome:"R-310",    dmg:1000, preco:260,  cor:"#ff3a2e", corpo:"#b3221b", branco:0.30 },  // vermelho, branco fraco
+  PLT21:  { nome:"PLT-2021", dmg:2500, preco:950,  cor:"#2f8cff", corpo:"#1f5fbf", branco:0.60 },  // azul, branco médio
+  PLT30:  { nome:"PLT-3030", dmg:7000, preco:3400, cor:"#e8eef8", corpo:"#151515", branco:1.00 },  // preto, branco forte
 };
 const ROCKET_ORDER = ["R310","PLT21","PLT30"];
 const ROCKET_CD = 3400;
@@ -2256,6 +2257,17 @@ function proximoAlvo() {
 
 function selAmmo(id) {
   if (!id || !AMMO[id]) return;
+  /* RSB-300 (×5): não troca a munição. O clique "arma" uma rajada; ela sai
+     assim que estiver fria e você estiver atacando, e o ataque segue com a
+     munição que já estava (ex.: ×2). Para outra rajada, clique de novo. */
+  if (AMMO[id].rajada) {
+    if (!(G.municao[id] > 0)) { toast(AMMO[id].nome + " sem munição"); return; }
+    G.rajadaArmada = id;
+    const falta = ((G.player.cdAmmo || {})[id] || 0) - G.tempo;
+    toast(AMMO[id].nome + (falta > 0 ? " armada — sai em " + Math.ceil(falta / 1000) + "s" : " armada"));
+    if (typeof montarBarraHab === "function") montarBarraHab();
+    return;
+  }
   // insistiu numa que acabou: em vez de recusar, desce para a de baixo
   if (!AMMO[id].infinita && !(G.municao[id] > 0)) { descerMunicao(id); return; }
   G.ammoSel = id;
@@ -2297,7 +2309,7 @@ function atirarFoguete() {
   if (dist(p.x, p.y, p.alvo.x, p.alvo.y) > 900) { toast("Fora de alcance"); return; }
   G.foguetes[G.foguetSel]--;
   p.ultimoFoguete = G.tempo;
-  atirarLaser(p, p.alvo, danoMissil(f.dmg), "#ffb347", true, true);
+  atirarLaser(p, p.alvo, danoMissil(f.dmg), f.cor || "#ffb347", true, true, { corpo: f.corpo, branco: f.branco });
   p.alvo.agro = true;
   p.alvo.permitido = G.tempo + PERMISSAO_REVIDE;
   beep(180, 0.12);
@@ -2419,10 +2431,16 @@ function atualizar(dt) {
   const noAlcance = p.atacando && p.alvo && dist(p.x,p.y,p.alvo.x,p.alvo.y) <= 720;
   const selecionada = AMMO[G.ammoSel] || AMMO.lcb10;
 
-  /* A RSB-300 fica selecionada como qualquer outra, só que tem ritmo próprio:
-     em vez da cadência normal, ela espera esfriar e sai de novo sozinha. */
-  if (selecionada.rajada) {
-    if (noAlcance && T >= ((p.cdAmmo || {})[G.ammoSel] || 0)) dispararRajada(G.ammoSel, true);
+  /* RSB-300 armada: sai uma rajada quando estiver fria, e só. A munição
+     selecionada (a de antes) continua atirando normalmente. */
+  if (G.rajadaArmada && noAlcance && T >= ((p.cdAmmo || {})[G.rajadaArmada] || 0)) {
+    const id = G.rajadaArmada;
+    G.rajadaArmada = null;                 // gasta o clique, com ou sem sucesso
+    dispararRajada(id, true);
+    montarBarraHab();
+  }
+  if (selecionada.rajada) {                // save antigo com a ×5 selecionada: volta para a básica
+    G.ammoSel = "lcb10";
   }
   else if (noAlcance && T - p.ultimoTiro > 560) {
     p.ultimoTiro = T;
@@ -2461,8 +2479,8 @@ function atualizar(dt) {
       G.foguetes[G.foguetSel] -= disponiveis;
       const dano = danoMissil(f.dmg);
       for (let i = 0; i < disponiveis; i++)
-        atirarLaser(p, p.alvo, dano, "#ffb347", true, true,
-          { desvio: (i - (disponiveis-1)/2) * 12 });
+        atirarLaser(p, p.alvo, dano, f.cor || "#ffb347", true, true,
+          { desvio: (i - (disponiveis-1)/2) * 12, corpo: f.corpo, branco: f.branco });
       p.alvo.agro = true;
       p.alvo.permitido = T + PERMISSAO_REVIDE;
       quebrarCamuflagem();
@@ -2983,6 +3001,7 @@ function atirarLaser(origem, alvo, dano, cor, doJogador, foguete, extra) {
     visual: !!ex.visual, kAbre: ex.kAbre || 0.07,
     ammo: ex.ammo || null,                 // só para o visual: escolhe o perfil do feixe
     forma: ex.forma || (ex.curvo ? "missil" : foguete ? "foguete" : "bolt"),
+    corpo: ex.corpo || null, branco: ex.branco != null ? ex.branco : null,   // só visual: cor do foguete
   });
 }
 
@@ -3084,11 +3103,11 @@ function dispararRajada(id, auto) {
   if (!valido) p.alvo = alvoMaisProximo();
   if (!p.alvo) { aviso("Nenhum inimigo por perto"); return; }
   const custo = Math.max(1, canhoesNave());
-  if (!gastarMunicao(id, custo)) return;    // acabou: já voltou para a básica
+  // sem bala suficiente: avisa e não mexe na munição selecionada
+  if ((G.municao[id] || 0) < custo) { toast(a.nome + " sem munição"); return; }
+  G.municao[id] -= custo;
 
-  p.cdAmmo[id] = G.tempo + a.cd;
-  G.ammoSel = id;                           // fica selecionada esperando esfriar
-  G.calibre = id;                           // o pet passa a bater no ×5 também
+  p.cdAmmo[id] = G.tempo + a.cd;           // a munição selecionada não muda: segue a de antes
 
   /* O dano é um só e sai no primeiro clarão. As outras três rajadas são
      enfeite: viajam e estouram, mas não tiram nada. */
@@ -4222,6 +4241,7 @@ function desenharMissil(b) {
   const L = missil ? 15 : 13, W = missil ? 3.4 : 3.1;
   const co = Math.cos(b.ang), sn = Math.sin(b.ang);
   const cor = b.cor || "#ffb347";
+  const br = b.branco != null ? b.branco : 0.6;          // força do branco (núcleo da chama e ponta)
   // histórico curto de posições: é ele que desenha a curva do rastro
   if (!b.hist) b.hist = [];
   const h = b.hist, ult = h[h.length - 1];
@@ -4247,31 +4267,58 @@ function desenharMissil(b) {
   // chama do motor
   ctx.translate(b.x, b.y); ctx.rotate(b.ang);
   const pisca = 0.85 + Math.random() * 0.3, cl = L * 1.05 * pisca;
-  let g = ctx.createRadialGradient(-L * 0.55, 0, 0, -L * 0.55, 0, W * 4);
-  g.addColorStop(0, corComAlfa(cor, 0.55)); g.addColorStop(1, corComAlfa(cor, 0));
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(-L * 0.55, 0, W * 4, 0, 6.29); ctx.fill();
+  let g = ctx.createRadialGradient(-L * 0.55, 0, 0, -L * 0.55, 0, W * 2.6);
+  g.addColorStop(0, corComAlfa(cor, 0.32)); g.addColorStop(1, corComAlfa(cor, 0));
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(-L * 0.55, 0, W * 2.6, 0, 6.29); ctx.fill();
   ctx.fillStyle = corComAlfa(cor, 0.9);
   ctx.beginPath(); ctx.moveTo(-L * 0.5, -W * 0.8); ctx.quadraticCurveTo(-L * 0.5 - cl * 0.5, -W * 0.5, -L * 0.5 - cl, 0);
   ctx.quadraticCurveTo(-L * 0.5 - cl * 0.5, W * 0.5, -L * 0.5, W * 0.8); ctx.fill();
-  ctx.fillStyle = "rgba(255,248,225,.95)";
-  ctx.beginPath(); ctx.ellipse(-L * 0.62, 0, cl * 0.32, W * 0.42, 0, 0, 6.29); ctx.fill();
+  ctx.fillStyle = "rgba(255,250,240," + (0.35 + 0.6 * br) + ")";
+  ctx.beginPath(); ctx.ellipse(-L * 0.62, 0, cl * (0.22 + 0.16 * br), W * (0.3 + 0.2 * br), 0, 0, 6.29); ctx.fill();
+  if (br > 0.5) {                                        // branco forte: um halo branco em volta do bocal
+    const gb = ctx.createRadialGradient(-L * 0.6, 0, 0, -L * 0.6, 0, W * 2.2);
+    gb.addColorStop(0, "rgba(255,255,255," + 0.3 * (br - 0.4) + ")"); gb.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = gb; ctx.beginPath(); ctx.arc(-L * 0.6, 0, W * 2.2, 0, 6.29); ctx.fill();
+  }
   // corpo de metal (tapa, não soma)
   ctx.globalCompositeOperation = "source-over";
   g = ctx.createLinearGradient(0, -W, 0, W);
-  g.addColorStop(0, "#c9d1dc"); g.addColorStop(0.5, "#7d8796"); g.addColorStop(1, "#353b46");
+  /* ferro fosco: a cor do foguete vira tinta apagada sobre metal escuro,
+     com luz difusa (sem reflexo branco) e sombra suave embaixo */
+  const tinta = b.corpo ? misturarCorHex(b.corpo, "#4a4743", 0.45) : "#5d5f62";
+  g.addColorStop(0, misturarCor(tinta, "#b8b2a8", 0.28));
+  g.addColorStop(0.45, misturarCor(tinta, "#000000", 0.05));
+  g.addColorStop(1, misturarCor(tinta, "#000000", 0.55));
   ctx.fillStyle = g;
   ctx.beginPath(); ctx.moveTo(L * 0.5, 0);
   ctx.quadraticCurveTo(L * 0.3, -W, 0, -W); ctx.lineTo(-L * 0.5, -W * 0.85);
   ctx.lineTo(-L * 0.5, W * 0.85); ctx.lineTo(0, W); ctx.quadraticCurveTo(L * 0.3, W, L * 0.5, 0); ctx.fill();
   // aletas
-  ctx.fillStyle = "#4a515d";
+  ctx.fillStyle = misturarCor(tinta, "#000000", 0.4);
   ctx.beginPath(); ctx.moveTo(-L * 0.2, -W); ctx.lineTo(-L * 0.55, -W * 1.9); ctx.lineTo(-L * 0.5, -W * 0.8); ctx.fill();
   ctx.beginPath(); ctx.moveTo(-L * 0.2, W); ctx.lineTo(-L * 0.55, W * 1.9); ctx.lineTo(-L * 0.5, W * 0.8); ctx.fill();
   // ponta acesa na cor do míssil
-  ctx.globalCompositeOperation = "lighter";
-  ctx.fillStyle = corComAlfa(cor, 0.9);
-  ctx.beginPath(); ctx.ellipse(L * 0.36, 0, L * 0.14, W * 0.62, 0, 0, 6.29); ctx.fill();
+  // emendas das chapas: duas faixas escuras finas
+  ctx.strokeStyle = "rgba(0,0,0,.35)"; ctx.lineWidth = 0.6;
+  for (const xf of [0.08, -0.22]) { ctx.beginPath(); ctx.moveTo(L * xf, -W * 0.92); ctx.lineTo(L * xf, W * 0.92); ctx.stroke(); }
+  // ogiva de ferro mais escura, fosca
+  ctx.fillStyle = misturarCor(tinta, "#1c1b1a", 0.55);
+  ctx.beginPath(); ctx.moveTo(L * 0.5, 0); ctx.quadraticCurveTo(L * 0.4, -W * 0.72, L * 0.24, -W * 0.8);
+  ctx.lineTo(L * 0.24, W * 0.8); ctx.quadraticCurveTo(L * 0.4, W * 0.72, L * 0.5, 0); ctx.fill();
+  // luz difusa de cima, bem fraca (sem brilho de espelho)
+  ctx.fillStyle = "rgba(220,214,204,.12)";
+  ctx.beginPath(); ctx.ellipse(-L * 0.02, -W * 0.45, L * 0.38, W * 0.22, 0, 0, 6.29); ctx.fill();
   ctx.restore();
+}
+/* mistura que devolve #rrggbb (para poder misturar de novo) */
+function misturarCorHex(a, b, t) {
+  const pa = [1, 3, 5].map(i => parseInt(a.substr(i, 2), 16)), pb = [1, 3, 5].map(i => parseInt(b.substr(i, 2), 16));
+  return "#" + pa.map((v, i) => Math.round(v + (pb[i] - v) * t).toString(16).padStart(2, "0")).join("");
+}
+/* mistura duas cores #rrggbb (t = 0 fica a primeira, 1 a segunda) */
+function misturarCor(a, b, t) {
+  const pa = [1, 3, 5].map(i => parseInt(a.substr(i, 2), 16)), pb = [1, 3, 5].map(i => parseInt(b.substr(i, 2), 16));
+  return "rgb(" + pa.map((v, i) => Math.round(v + (pb[i] - v) * t)).join(",") + ")";
 }
 
 /* ---- explosões ----
@@ -6115,9 +6162,10 @@ function celulaBarra(cel, r, c) {
     const qtd = a.infinita ? "∞" : fmt(G.municao[cel.id] || 0);
     const gasto = a.infinita ? "" : ` · gasta ${Math.max(1, canhoesNave())} por tiro seu` +
                   (canhoesPet() ? ` e ${canhoesPet()} por tiro do pet` : "");
-    const dica = (a.rajada ? `dano ×${a.mult} em ${a.rajada} rajadas · fica selecionada e sai de novo a cada ${a.cd/1000}s`
+    const dica = (a.rajada ? `dano ×${a.mult} em ${a.rajada} rajadas · um clique = uma rajada (recarga ${a.cd/1000}s), depois volta para a munição que estava`
                : a.rouba  ? "rouba escudo" : "dano ×" + a.mult) + gasto;
-    return `<div class="ab tiro ${G.ammoSel === cel.id ? "on" : ""}" id="ab_ammo_${cel.id}" ${abre}
+    const ligada = a.rajada ? G.rajadaArmada === cel.id : G.ammoSel === cel.id;   // ×5: acesa enquanto armada
+    return `<div class="ab tiro ${ligada ? "on" : ""}" id="ab_ammo_${cel.id}" ${abre}
       title="${a.nome} — ${dica} · atalho ${teclaDaCelula(r,c)}">
       ${tec}<div style="font-size:11px">×${a.mult}</div><small>${qtd}</small>
       ${a.rajada ? `<div class="cd hidden"></div>` : ""}</div>`;
@@ -6195,6 +6243,10 @@ function acionarCelula(r, c) {
 
   if (cel.k === "ammo") {
     // apertar de novo a munição que já está atirando cancela o ataque
+    // ×5 armada e clicada de novo: desarma
+    if (AMMO[cel.id] && AMMO[cel.id].rajada && G.rajadaArmada === cel.id) {
+      G.rajadaArmada = null; montarBarraHab(); toast(AMMO[cel.id].nome + " desarmada"); return;
+    }
     if (p.atacando && G.ammoSel === cel.id) {
       p.atacando = false;
       montarBarraHab();
@@ -8099,7 +8151,7 @@ function aplicarSave(d) {
   }
   G.municao = mun;
   if (!AMMO[G.ammoSel] || AMMO[G.ammoSel].rajada) G.ammoSel = "lcb10";
-  if (!AMMO[G.calibre]) G.calibre = G.ammoSel;      // saves antigos não guardavam o calibre
+  if (!AMMO[G.calibre] || AMMO[G.calibre].rajada) G.calibre = G.ammoSel;      // saves antigos não guardavam o calibre
 
   // projéteis do lança-mísseis
   const proj = {};
