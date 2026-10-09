@@ -4350,6 +4350,9 @@ const ESCUDO_VIDA_FX   = 480;    // ms que o pedaço do escudo fica aceso depois
 const ESCUDO_RAIO     = 0.88;   // raio da bolha, em comprimentos de nave
 const ESCUDO_PEDACO   = 0.72;   // tamanho do pedaço que acende (1 = metade da bolha)
 const ESCUDO_BAIXO     = 0.25;   // abaixo disso as luzes de alerta piscam
+const VARREDURA_CADA   = 10000;  // ms sem tomar dano para a energia passar pelo escudo
+const VARREDURA_DUR    = 1800;   // ms da passada (ida e volta)
+const VARREDURA_LARG   = 0.26;   // largura da faixa de energia (fração da bolha)
 const DANO_FUMACA      = 0.60;   // vida (fração) em que começa a fumaça
 const DANO_FAISCA      = 0.35;   // ...as faíscas
 const DANO_FOGO        = 0.15;   // ...o fogo
@@ -4398,6 +4401,37 @@ function texturaHex() {
   return (texHex = c);
 }
 
+/* Varredura de energia: com o escudo carregado e 10 s sem levar tiro, uma
+   faixa de luz atravessa a bolha da esquerda-cima para a direita-baixo e
+   volta, e repete a cada 10 s enquanto ninguém acertar a nave. A direção é
+   fixa na tela, não gira com a nave. */
+let varreduraCanvas = null;
+function varreduraDoEscudo(u) {
+  const tex = texturaHex(), N = tex.width, c = N / 2;
+  if (!varreduraCanvas) { varreduraCanvas = document.createElement("canvas"); varreduraCanvas.width = varreduraCanvas.height = N; }
+  const x = varreduraCanvas.getContext("2d");
+  x.globalCompositeOperation = "source-over";
+  x.clearRect(0, 0, N, N);
+  x.drawImage(tex, 0, 0);
+  const g = x.createRadialGradient(c, c, c * 0.62, c, c, c);
+  g.addColorStop(0, "rgba(60,170,255,0)"); g.addColorStop(0.75, "rgba(80,195,255,.35)");
+  g.addColorStop(0.97, "rgba(170,240,255,.9)"); g.addColorStop(1, "rgba(170,240,255,0)");
+  x.fillStyle = g; x.fillRect(0, 0, N, N);
+  // faixa diagonal: u = 0 no canto de cima à esquerda, 1 no de baixo à direita
+  const m = x.createLinearGradient(0, 0, N, N);
+  // a bolha ocupa de 0,146 a 0,854 da diagonal do quadrado: a faixa anda só aí
+  const w = VARREDURA_LARG, p = 0.146 - w * 0.4 + u * (0.708 + w * 0.8);
+  const para = v => Math.min(1, Math.max(0, v));
+  m.addColorStop(0, "rgba(0,0,0,0)");
+  m.addColorStop(para(p - w), "rgba(0,0,0,0)");
+  m.addColorStop(para(p), "rgba(0,0,0,1)");
+  m.addColorStop(para(p + w), "rgba(0,0,0,0)");
+  m.addColorStop(1, "rgba(0,0,0,0)");
+  x.globalCompositeOperation = "destination-in";
+  x.fillStyle = m; x.fillRect(0, 0, N, N);
+  return varreduraCanvas;
+}
+
 /* Monta, num canvas reaproveitado, só o pedaço da bolha virado para `ang`:
    hexágonos + a borda brilhante, recortados por uma mancha que é forte no
    ponto do impacto e some em direção ao outro lado da nave. */
@@ -4433,6 +4467,19 @@ function desenharEscudo(t) {
   ctx.save();
   ctx.translate(p.x, p.y); ctx.scale(1, ky);
   ctx.globalCompositeOperation = "lighter";
+
+  // varredura de energia quando a nave está tranquila
+  const calmo = G.tempo - (p.ultimoDano || 0);
+  if (fr > 0 && calmo >= VARREDURA_CADA) {
+    const fase = (calmo - VARREDURA_CADA) % VARREDURA_CADA;
+    if (fase < VARREDURA_DUR) {
+      const k = fase / VARREDURA_DUR;                      // 0..1: ida e volta
+      const ida = k < 0.5 ? k * 2 : (1 - k) * 2;           // 0 → 1 → 0
+      const u = ida * ida * (3 - 2 * ida);                 // suaviza nas pontas
+      ctx.globalAlpha = 0.75 * Math.max(0.35, fr) * Math.sin(Math.PI * k) ** 0.25;
+      ctx.drawImage(varreduraDoEscudo(u), -R, -R, R * 2, R * 2);
+    }
+  }
 
   // escudo: acende só o pedaço do lado atingido, apagando em volta
   for (const im of impactos) {
