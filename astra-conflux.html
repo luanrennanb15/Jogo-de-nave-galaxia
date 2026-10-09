@@ -2359,7 +2359,11 @@ function atualizar(dt) {
   let giro = p.ang - angAntes;
   while (giro >  Math.PI) giro -= 2*Math.PI;
   while (giro < -Math.PI) giro += 2*Math.PI;
-  atualizarInclinacao(giro * 16 / Math.max(1, dt), dt);
+  /* lateral: quanto do movimento é de lado em relação ao bico (−1 esquerda,
+     +1 direita). Só conta quando ela está mirando — andando livre ela já
+     aponta para onde vai, e aí quem inclina é o giro. */
+  const lateral = (mirando && rumo !== null) ? Math.sin(rumo - p.ang) : 0;
+  atualizarInclinacao(giro * 16 / Math.max(1, dt), dt, lateral, mirando);
   alimentarRastro(dt);
 
   // --- regeneração (em qualquer lugar do mapa) ---
@@ -4057,8 +4061,17 @@ let inclinacaoTita = 0;
    ficava lá, em vez de rolar para dentro e para fora da curva. Com 9 uma
    curva de 45° usa 8 dos 33 quadros da tira sem nunca encostar no limite. */
 const GANHO_INCLINACAO = 9;
-function atualizarInclinacao(giro, dt) {
-  const alvo = clamp(giro * GANHO_INCLINACAO, -1, 1);   // rad/quadro → −1..1
+/* Além do giro, a nave deita para o lado em que está andando de lado — é o
+   que acontece no ataque, quando ela fica apontada para o inimigo e quase
+   não gira: sem isto ela ficava reta mesmo se movendo. E mirando ela dá um
+   balanço leve de um lado para o outro, para não parecer parada no ar. */
+const INCL_LATERAL  = 0.55;     // andando totalmente de lado, deita até isso
+const INCL_BALANCO  = 0.10;     // amplitude do balanço durante o ataque
+const BALANCO_RITMO = 900;      // ms de um lado ao outro (meio ciclo)
+function atualizarInclinacao(giro, dt, lateral, mirando) {
+  let alvo = giro * GANHO_INCLINACAO + (lateral || 0) * INCL_LATERAL;
+  if (mirando) alvo += Math.sin(G.tempo * Math.PI / BALANCO_RITMO) * INCL_BALANCO;
+  alvo = clamp(alvo, -1, 1);                            // −1..1
   inclinacaoTita += (alvo - inclinacaoTita) * Math.min(1, 0.15 * dt / 16);
 }
 
