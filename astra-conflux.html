@@ -2648,7 +2648,7 @@ function atualizar(dt) {
         numeroDano(en.x, en.y - 28, "-" + fmt(roubado) + " esc", "#63e6ff");
         if (roubado > 0) numeroDano(p.x, p.y - 46, "+" + fmt(roubado), "#63e6ff");
         ondaDreno(en.x, en.y);                       // efeito: onda no inimigo...
-        if (roubado > 0) fluxoDreno(en);             // ...e a energia puxada até você
+        fluxoDreno(en);                              // ...e os anéis puxados até você
       } else if (b.doJogador && b.visual) {
         // enfeite ou tiro órfão: só o clarão, sem dano
         if (b.curvo || b.foguete) explosao(b.alvo.x, b.alvo.y, b.cor, 14);
@@ -4046,56 +4046,39 @@ function desenharFeixe(b) {
   ctx.restore();
 }
 
-/* ===================== DRNO-25: ANEL DE DRENO =====================
+/* ===================== DRNO-25: CORRENTE DE ANÉIS =====================
    Só visual. A drenagem (quanto sai do escudo do inimigo e entra no seu)
    continua no ramo `b.rouba` de atualizar(), sem mudança.
-   - projétil: anel de energia sempre redondo na tela (virado para a câmera),
-     com borda nítida, brilho controlado, arcos girando e um ponto de energia
-     no centro; pulsa de leve e solta faíscas discretas
-   - acerto: onda circular que se abre e some
-   - dreno: um fio de partículas sai do inimigo e é puxado até a sua nave,
-     terminando num anelzinho no seu escudo */
+   - projétil: anel de energia azul "de lado" (perpendicular à direção do tiro)
+   - acerto: onda circular no inimigo e uma sequência de anéis que sai dele
+     e viaja até a sua nave, encolhendo — energia sendo puxada, tipo túnel
+   - chegada: pulso no seu escudo */
 const DRENO = { borda: "#2f7bff", anel: "#62dcff", miolo: "#e8fbff", raio: 9 };
 let motesDreno = [], ondasDreno = [], fluxosDreno = [];
 
-function desenharAnelDreno(b, t) {
-  const R = DRENO.raio * (1 + Math.sin(t / 95 + b.nascido) * 0.07);
-  const giro = t / 230 + b.nascido * 0.01;
-  ctx.save();
-  ctx.translate(b.x, b.y);
-  ctx.globalCompositeOperation = "lighter";
-  ctx.lineCap = "round";
-  // brilho externo controlado: duas faixas largas e fracas sobre o anel
-  ctx.strokeStyle = corComAlfa(DRENO.borda, 0.22); ctx.lineWidth = R * 0.95;
-  ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.29); ctx.stroke();
-  ctx.strokeStyle = corComAlfa(DRENO.anel, 0.30); ctx.lineWidth = R * 0.42;
-  ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.29); ctx.stroke();
-  // anel nítido
-  ctx.strokeStyle = corComAlfa(DRENO.miolo, 0.95); ctx.lineWidth = 1.7;
-  ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.29); ctx.stroke();
-  ctx.strokeStyle = corComAlfa(DRENO.anel, 0.55); ctx.lineWidth = 1;
-  ctx.beginPath(); ctx.arc(0, 0, R * 0.62, 0, 6.29); ctx.stroke();
-  // arcos girando por fora (sentido horário) e por dentro (anti-horário)
-  ctx.strokeStyle = corComAlfa(DRENO.anel, 0.85); ctx.lineWidth = 1.4;
-  for (let k = 0; k < 3; k++) {
-    const a0 = giro + k * 2.094;
-    ctx.beginPath(); ctx.arc(0, 0, R * 1.32, a0, a0 + 0.75); ctx.stroke();
-  }
-  ctx.strokeStyle = corComAlfa(DRENO.miolo, 0.6); ctx.lineWidth = 1;
-  for (let k = 0; k < 3; k++) {
-    const a0 = -giro * 1.6 + k * 2.094;
-    ctx.beginPath(); ctx.arc(0, 0, R * 0.82, a0, a0 + 0.5); ctx.stroke();
-  }
-  // concentração de energia no centro
-  const g = ctx.createRadialGradient(0, 0, 0, 0, 0, R * 0.36);
-  g.addColorStop(0, corComAlfa(DRENO.miolo, 0.95)); g.addColorStop(1, corComAlfa(DRENO.anel, 0));
-  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, R * 0.36, 0, 6.29); ctx.fill();
+/* um anel visto de lado: elipse cujo lado comprido fica perpendicular a `ang` */
+function anelDeLado(x, y, R, ang, a) {
+  if (a <= 0.01 || R <= 0.5) return;
+  const rx = R * 0.36, ry = R;
+  ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+  ctx.strokeStyle = corComAlfa(DRENO.borda, 0.30 * a); ctx.lineWidth = R * 0.55;
+  ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, 6.29); ctx.stroke();
+  ctx.strokeStyle = corComAlfa(DRENO.anel, 0.55 * a); ctx.lineWidth = R * 0.24;
+  ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, 6.29); ctx.stroke();
+  ctx.strokeStyle = corComAlfa(DRENO.miolo, 0.95 * a); ctx.lineWidth = Math.max(1, R * 0.09);
+  ctx.beginPath(); ctx.ellipse(0, 0, rx, ry, 0, 0, 6.29); ctx.stroke();
   ctx.restore();
-  // faíscas discretas soltando para trás
-  if (Math.random() < 0.45 && motesDreno.length < 80) {
-    const a = b.ang + Math.PI + (Math.random() - 0.5) * 1.6, r = R * (0.9 + Math.random() * 0.4);
-    motesDreno.push({ x: b.x + Math.cos(a) * r, y: b.y + Math.sin(a) * r,
-                      vx: Math.cos(a) * 0.5, vy: Math.sin(a) * 0.5, t: G.tempo, vida: 260 + Math.random() * 200 });
+}
+
+function desenharAnelDreno(b, t) {
+  const R = DRENO.raio * (1 + Math.sin(t / 80 + b.nascido) * 0.08);
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  anelDeLado(b.x, b.y, R * 0.55, b.ang, 0.75);          // pequeno: o destaque é a corrente que volta
+  ctx.restore();
+  if (Math.random() < 0.2 && motesDreno.length < 80) {
+    const a = b.ang + Math.PI + (Math.random() - 0.5) * 1.2;
+    motesDreno.push({ x: b.x + Math.cos(a) * R, y: b.y + Math.sin(a) * R,
+                      vx: Math.cos(a) * 0.4, vy: Math.sin(a) * 0.4, t: G.tempo, vida: 240 + Math.random() * 180 });
   }
 }
 
@@ -4104,28 +4087,23 @@ function ondaDreno(x, y, ate) {
   ondasDreno.push({ x, y, t: G.tempo, ate: ate || 46 });
   if (ondasDreno.length > 20) ondasDreno.shift();
 }
-/* fio de energia: partículas saem do inimigo e são puxadas até a sua nave */
+/* sequência de anéis que sai do inimigo e é puxada até a sua nave */
 function fluxoDreno(en) {
-  const n = 14;
-  for (let i = 0; i < n; i++) {
-    const lado = (Math.random() - 0.5) * 2;
-    fluxosDreno.push({ ox: en.x + (Math.random() - 0.5) * 14, oy: en.y + (Math.random() - 0.5) * 14,
-                       t: G.tempo + i * 28, dur: 420 + Math.random() * 120, curva: lado * 60,
-                       ultimo: i === n - 1, chegou: false });
-  }
-  if (fluxosDreno.length > 120) fluxosDreno.splice(0, fluxosDreno.length - 120);
+  const n = 4;
+  for (let i = 0; i < n; i++)
+    fluxosDreno.push({ ox: en.x, oy: en.y, t: G.tempo + i * 110, dur: 640, ultimo: i === n - 1, chegou: false });
+  if (fluxosDreno.length > 40) fluxosDreno.splice(0, fluxosDreno.length - 40);
 }
 function desenharDreno() {
   if (!motesDreno.length && !ondasDreno.length && !fluxosDreno.length) return;
   const p = G.player;
   ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
-  // faíscas do anel em voo
   for (const m of motesDreno) {
     const k = 1 - (G.tempo - m.t) / m.vida;
     if (k <= 0) continue;
     m.x += m.vx; m.y += m.vy;
-    ctx.fillStyle = corComAlfa(DRENO.anel, 0.8 * k);
-    ctx.beginPath(); ctx.arc(m.x, m.y, 0.8 + k * 0.7, 0, 6.29); ctx.fill();
+    ctx.fillStyle = corComAlfa(DRENO.anel, 0.7 * k);
+    ctx.beginPath(); ctx.arc(m.x, m.y, 0.7 + k * 0.7, 0, 6.29); ctx.fill();
   }
   motesDreno = motesDreno.filter(m => G.tempo - m.t < m.vida);
   // ondas
@@ -4147,23 +4125,24 @@ function desenharDreno() {
     }
   }
   ondasDreno = ondasDreno.filter(o => G.tempo - o.t < 420);
-  // fluxo do inimigo até você (o destino é a sua nave AGORA, então acompanha)
+  // anéis viajando do inimigo até você (o destino é a sua nave AGORA, então acompanha)
   if (!G.morto) for (const f of fluxosDreno) {
     const k = (G.tempo - f.t) / f.dur;
     if (k < 0 || k > 1) continue;
-    const e = k * k * (3 - 2 * k);                       // acelera e chega suave
-    const dx = p.x - f.ox, dy = p.y - f.oy, L = Math.hypot(dx, dy) || 1;
-    const cx = (f.ox + p.x) / 2 - dy / L * f.curva, cy = (f.oy + p.y) / 2 + dx / L * f.curva;
-    const q = (u) => [(1-u)*(1-u)*f.ox + 2*(1-u)*u*cx + u*u*p.x, (1-u)*(1-u)*f.oy + 2*(1-u)*u*cy + u*u*p.y];
-    const [x, y] = q(e), [x2, y2] = q(Math.max(0, e - 0.07));
-    ctx.strokeStyle = corComAlfa(DRENO.anel, 0.75); ctx.lineWidth = 1.6;
-    ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x, y); ctx.stroke();
-    ctx.fillStyle = corComAlfa(DRENO.miolo, 0.95);
-    ctx.beginPath(); ctx.arc(x, y, 1.6, 0, 6.29); ctx.fill();
+    const e = k * (0.6 + 0.4 * k);                       // começa devagar e acelera, como sugado
+    const x = f.ox + (p.x - f.ox) * e, y = f.oy + (p.y - f.oy) * e;
+    const ang = Math.atan2(p.y - f.oy, p.x - f.ox);
+    const R = 17 - 10 * e;                               // grande no inimigo, pequeno chegando
+    const a = Math.min(1, k / 0.08) * (k > 0.82 ? (1 - k) / 0.18 : 1);
+    // névoa azul fraca atrás de cada anel
+    const g = ctx.createRadialGradient(x, y, 0, x, y, R * 1.3);
+    g.addColorStop(0, corComAlfa(DRENO.borda, 0.12 * a)); g.addColorStop(1, corComAlfa(DRENO.borda, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, R * 1.3, 0, 6.29); ctx.fill();
+    anelDeLado(x, y, R, ang, a);
   }
-  // quando o fio chega, o seu escudo dá um pulso
+  // quando o último anel chega, o seu escudo dá um pulso
   for (const f of fluxosDreno) {
-    if (f.ultimo && !f.chegou && G.tempo >= f.t + f.dur) { f.chegou = true; if (!G.morto) ondaDreno(p.x, p.y, 34); }
+    if (f.ultimo && !f.chegou && G.tempo >= f.t + f.dur) { f.chegou = true; if (!G.morto) ondaDreno(p.x, p.y, 30); }
   }
   fluxosDreno = fluxosDreno.filter(f => G.tempo < f.t + f.dur + 20);
   ctx.restore();
