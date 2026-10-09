@@ -4341,8 +4341,8 @@ let luzNeutra = 0;
 /* ===================== ESCUDO E DANO =====================
    - escudo energético: bolha de hexágonos que acende quando um tiro bate e o
      escudo segura alguma coisa, mais forte no ponto do impacto
-   - ondas: anéis que se abrem a partir do ponto atingido (azuis no escudo,
-     laranja quando o tiro passa e pega no casco)
+   - ondas: anéis azuis que se abrem a partir do ponto atingido no escudo
+     (no casco fica só o clarão rápido na nave e a faísca, mais discreto)
    - escudo baixo (< 25%): luzes vermelhas piscando nas laterais da nave
    - casco ferido: fumaça abaixo de 60% de vida, faíscas abaixo de 35% e
      fogo abaixo de 15% — mais forte quanto pior */
@@ -4444,8 +4444,10 @@ function desenharEscudo(t) {
     ctx.drawImage(pedaco, -R, -R, R * 2, R * 2);
   }
 
-  // ondas e clarão em cada ponto atingido
+  // ondas e clarão em cada ponto atingido — só no escudo. Tiro que pega no
+  // casco fica com o efeito discreto de sempre (clarão rápido na nave + faísca).
   for (const im of impactos) {
+    if (!im.escudo) continue;
     const idade = (G.tempo - im.t) / 520;
     if (idade >= 1) continue;
     const noEscudo = im.escudo;
