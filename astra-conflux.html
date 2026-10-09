@@ -4473,7 +4473,8 @@ function desenharColapsos(t) {
       const esc = (c.r * c.fig.tam * 0.9) / c.ci.tam;
       quadroIncl(c.ci, x, y, c.ang + k * 0.25, c.inc, esc);
       ctx.save(); ctx.globalCompositeOperation = "lighter";
-      ctx.globalAlpha = Math.min(1, k * 0.8 + (Math.sin(t / (60 - 35 * k)) * 0.5 + 0.5) * 0.35 * k);
+      // esquenta sem estourar em branco: no máximo ~40% somado, piscando
+      ctx.globalAlpha = Math.min(0.42, k * 0.25 + (Math.sin(t / (60 - 35 * k)) * 0.5 + 0.5) * 0.18 * k);
       quadroIncl(c.ci, x, y, c.ang + k * 0.25, c.inc, esc);
       ctx.restore();
     } else {
@@ -4918,7 +4919,7 @@ const INCL_NAVE = {
 /* Inimigos com a mesma câmera inclinada das suas naves (32 direções × 13
    inclinações, luz Padrão C). `tam` é o comprimento renderizado; no jogo a
    escala acompanha o tamanho que o bicho já tinha. Por enquanto: Drone
-   Errante (mapa 1), Sonda Corrosiva (mapas 2 e 3), Corsário (mapas 3 e 4), Ceifador (mapa 3), Predador (mapas 3 e 4) e Devorador (chefe do mapa 4). */
+   Errante (mapa 1), Sonda Corrosiva (mapas 2 e 3), Corsário (mapas 3 e 4), Ceifador (mapa 3), Predador (mapas 3 e 4), Devorador (chefe do mapa 4) e Cruzziun (chefe). */
 const INCL_INIMIGO = {
   errante: { arqs:Array.from({ length: 13 }, (_, i) => "nave-errante-" + i + ".webp"),
              N:32, cols:8, fw:154, fh:138, px:2.5, inc:40, tam:57 },
@@ -4932,7 +4933,51 @@ const INCL_INIMIGO = {
              N:32, cols:8, fw:232, fh:210, px:2.5, inc:40, tam:87 },
   devorador:{ arqs:Array.from({ length: 13 }, (_, i) => "nave-devorador-" + i + ".webp"),
              N:32, cols:8, fw:440, fh:426, px:2.5, inc:40, tam:140 },
+  /* Cruzziun: nave enorme (≈385 de comprimento). Para não pesar, 1,2 pixel por
+     unidade e 5 inclinações de curva (−45° a +45°) — ele quase não faz curva. */
+  cruzziun:{ arqs:Array.from({ length: 5 }, (_, i) => "nave-cruzziun-" + i + ".webp"),
+             N:32, cols:8, fw:484, fh:468, px:1.2, inc:40, tam:385 },
 };
+/* Cruzziun: os cinco motores da traseira sempre acesos (azul, pulsando
+   devagar, mais fortes andando), luzes de navegação piscando nas pontas de
+   trás (vermelha à esquerda, verde à direita) e um estrobo branco na proa.
+   Posições em frações do comprimento, medidas na folha renderizada. */
+const CRUZ_MOTORES = [-0.13, -0.065, 0, 0.065, 0.13];
+function luzesCruzziun(en, ci, L, t) {
+  const fase = (en.x * 0.37) % 6.28;
+  const anda = en.andando ? 1 : 0.55;
+  ctx.save();
+  ctx.translate(en.x, en.y); ctx.scale(1, ci.cosInc); ctx.rotate(en.ang);
+  ctx.globalCompositeOperation = "lighter";
+  // brilho geral atrás dos motores
+  let g = ctx.createRadialGradient(-L * 0.52, 0, 0, -L * 0.52, 0, L * 0.22);
+  g.addColorStop(0, `rgba(${COR_MOTOR.meio},${0.22 * anda})`); g.addColorStop(1, `rgba(${COR_MOTOR.borda},0)`);
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(-L * 0.52, 0, L * 0.22, 0, 6.29); ctx.fill();
+  CRUZ_MOTORES.forEach((y, i) => {
+    const pulso = 0.85 + 0.15 * Math.sin(t / 240 + i * 1.3 + fase);
+    const x = -L * 0.505, yy = y * L, r = L * 0.034 * pulso;
+    g = ctx.createRadialGradient(x, yy, 0, x, yy, r * 2.4);
+    g.addColorStop(0, `rgba(${COR_MOTOR.nucleo},${0.95 * anda})`);
+    g.addColorStop(0.35, `rgba(${COR_MOTOR.meio},${0.6 * anda})`);
+    g.addColorStop(1, `rgba(${COR_MOTOR.borda},0)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, yy, r * 2.4, 0, 6.29); ctx.fill();
+    // jato curto para trás
+    const jl = L * (0.05 + 0.07 * anda) * pulso;
+    const gj = ctx.createLinearGradient(x, 0, x - jl, 0);
+    gj.addColorStop(0, `rgba(${COR_MOTOR.meio},${0.55 * anda})`); gj.addColorStop(1, `rgba(${COR_MOTOR.borda},0)`);
+    ctx.fillStyle = gj; ctx.beginPath(); ctx.ellipse(x - jl * 0.45, yy, jl * 0.55, r * 0.75, 0, 0, 6.29); ctx.fill();
+  });
+  // luzes de navegação
+  const pisca = (per, off) => ((t + off) % per) < per * 0.18;
+  const ponto = (x, y, cor, r) => {
+    const gp = ctx.createRadialGradient(x, y, 0, x, y, r);
+    gp.addColorStop(0, "rgba(255,255,255,.95)"); gp.addColorStop(0.3, cor); gp.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.fillStyle = gp; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
+  };
+  if (pisca(1300, fase * 100)) { ponto(-L * 0.44, -L * 0.25, "rgba(255,60,60,.8)", L * 0.03); ponto(-L * 0.44, L * 0.25, "rgba(60,255,120,.8)", L * 0.03); }
+  if (pisca(1700, 600 + fase * 100)) ponto(L * 0.49, 0, "rgba(220,235,255,.9)", L * 0.028);
+  ctx.restore();
+}
 function inclDoInimigo(id) {
   const c = INCL_INIMIGO[id];
   if (!c) return null;
@@ -5821,9 +5866,11 @@ function desenharInimigo(en, t) {
          quadro certo para a direção e a inclinação, sem fantasma */
       const esc = (w * 0.9) / ciI.tam;
       ctx.save(); ctx.translate(en.x, en.y); ctx.scale(1, ciI.cosInc); ctx.rotate(en.ang);
-      if (en.andando) bicoDeChama(w, h, clamp(ed.speed / 3, 0.25, 1), 0, t, en.x, COR_MOTOR_INIMIGO);
+      if (en.andando && ed.sprite !== "cruzziun")        // o Cruzziun tem os cinco motores próprios
+        bicoDeChama(w, h, clamp(ed.speed / 3, 0.25, 1), 0, t, en.x, COR_MOTOR_INIMIGO);
       ctx.restore();
       quadroIncl(ciI, en.x, en.y, en.ang, inc, esc * respiro, en);
+      if (ed.sprite === "cruzziun") luzesCruzziun(en, ciI, w * 0.9, t);
       const desde = G.tempo - (en.ultimoDano || -9999);   // clarão ao apanhar
       if (desde < 260) {
         ctx.save();
