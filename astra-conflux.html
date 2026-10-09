@@ -2017,15 +2017,310 @@ function camadaFundo(img, cor, z, alfa, escala, tre) {
   ctx.globalAlpha = 1;
 }
 
-let planeta = null;
-function gerarNebulosa() {
-  const pal = paletaAtual();
-  // um corpo distante, quase parado, só para o setor ter um ponto de referência
-  planeta = {
-    x: Math.random()*WORLD.w, y: Math.random()*WORLD.h,
-    r: 130 + Math.random()*140, z: 0.045,
-    cor: pal.planeta, cor2: sectorData().cor,
+/* ===================== CENÁRIO ESPACIAL =====================
+   Tudo aqui é só visual e fica atrás (ou bem na frente, a poeira fina) do
+   jogo — não tem colisão nem muda nada da partida.
+   Camadas, da mais longe para a mais perto (z = quanto anda com a câmera):
+     sol .006 · nebulosa .055 · planeta/lua .04–.06 · faixas escuras .13 ·
+     nebulosa .105 · poeira .17 · brilho de nebulosa .30 · estrelas ·
+     asteroides longe .22 · asteroides médios .48 · destroços .78 ·
+     [o jogo] · poeira fina na frente 1.35
+   Planetas e asteroides vieram de modelos 3D (three.js) com a mesma luz das
+   naves: o sol fica no canto de cima à esquerda, então tudo bate. Os
+   asteroides giram quadro a quadro (48 quadros por volta) e a luz não gira
+   junto — é rotação de verdade, com a sombra no lado certo. */
+const TIPO_PLANETA = ["oceano", "gelo", "gasoso", "violeta", "lava", "rochoso"];
+const PLANETA_ANEIS = { gasoso: true, violeta: true };   // folha maior, com anéis
+const _imgPlaneta = {};
+function planetaImg(tipo) {
+  if (!_imgPlaneta[tipo]) { const i = new Image(); i.src = "planeta-" + tipo + ".webp"; _imgPlaneta[tipo] = i; }
+  const i = _imgPlaneta[tipo];
+  return i.complete && i.naturalWidth ? i : null;
+}
+/* 4 rochas × 48 quadros de 80 px: pouca memória de vídeo (as folhas das naves já ocupam bastante) */
+/* cada folha vira um canvas assim que carrega: o canvas fica pronto na
+   memória e o navegador não precisa decodificar a imagem de novo a cada
+   quadro (com as folhas grandes das naves, isso pesava) */
+const imgAsteroide = Array.from({ length: 4 }, (_, i) => {
+  const im = new Image();
+  const slot = { complete: false, naturalWidth: 0, img: null };
+  im.onload = () => {
+    const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
+    c.getContext("2d").drawImage(im, 0, 0);
+    slot.img = c; slot.naturalWidth = c.width; slot.complete = true;
   };
+  im.src = "asteroide-" + i + ".webp";
+  return slot;
+});
+const AST_F = 80, AST_N = 48, AST_COLS = 8;
+
+/* hash inteiro → 0..1, para gerar o mesmo campo sempre no mesmo lugar */
+function h01(a, b, c) {
+  let h = (a * 374761393 + b * 668265263 + c * 2147483647) | 0;
+  h = Math.imul(h ^ (h >>> 13), 1274126177);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
+/* um asteroide: escolhe o quadro pela rotação; os grandes misturam com o
+   próximo quadro para a volta ficar lisa */
+function desenharAsteroide(v, x, y, tam, quadro, alfa) {
+  const sl = imgAsteroide[v];
+  if (!sl.complete) return;
+  const im = sl.img;
+  const q0 = Math.floor(quadro), f = quadro - q0;
+  const q = ((q0 % AST_N) + AST_N) % AST_N, q1 = (q + 1) % AST_N;
+  ctx.globalAlpha = alfa;
+  ctx.drawImage(im, (q % AST_COLS) * AST_F, ((q / AST_COLS) | 0) * AST_F, AST_F, AST_F, x - tam / 2, y - tam / 2, tam, tam);
+  if (tam > 26 && f > 0.05) {
+    ctx.globalAlpha = alfa * f;
+    ctx.drawImage(im, (q1 % AST_COLS) * AST_F, ((q1 / AST_COLS) | 0) * AST_F, AST_F, AST_F, x - tam / 2, y - tam / 2, tam, tam);
+  }
+}
+
+/* quanto cada setor tem de pedra: cinturões e campos de destroços mais cheios */
+function densidadeSetor() {
+  const n = (sectorData().nome || "");
+  if (/Cintur|Destro/.test(n)) return 2.2;
+  if (/Forja|Fenda/.test(n)) return 1.3;
+  if (/Vazio/.test(n)) return 0.45;
+  return 1;
+}
+
+const CAMADAS_AST = [
+  { z: 0.22, tile: 620, max: 7, tmin: 6,  tmax: 14, alfa: 0.50, dens: 0.7 },
+  { z: 0.48, tile: 760, max: 4, tmin: 16, tmax: 42, alfa: 0.78, dens: 0.55 },
+  { z: 0.78, tile: 900, max: 3, tmin: 5,  tmax: 14, alfa: 0.82, dens: 0.38, destrocos: true },
+];
+const _tilesAst = new Map();
+function tileAst(ci, tx, ty) {
+  const chave = G.setor + "|" + ci + "|" + tx + "|" + ty;
+  let t = _tilesAst.get(chave);
+  if (t) return t;
+  const C = CAMADAS_AST[ci], s = G.setor * 131 + ci * 17;
+  /* cinturão: uma faixa diagonal que atravessa o setor, mais densa no meio */
+  const cx = (tx + 0.5) * C.tile / C.z, cy = (ty + 0.5) * C.tile / C.z;   // posição aproximada no mundo
+  const ang = 0.35 + h01(G.setor, 7, 7) * 0.5;
+  const u = (-(cx - WORLD.w / 2) * Math.sin(ang) + (cy - WORLD.h / 2) * Math.cos(ang)) / 900;
+  const faixa = Math.exp(-u * u);
+  const dens = C.dens * densidadeSetor() * (0.3 + 0.9 * faixa);
+  const n = Math.min(C.max * 2, Math.floor(C.max * dens + h01(tx, ty, s) * 1.6));
+  t = [];
+  for (let i = 0; i < n; i++) {
+    const r = (k) => h01(tx * 31 + i, ty * 17 + k, s + i * 7);
+    t.push({ x: r(1) * C.tile, y: r(2) * C.tile, v: Math.floor(r(3) * 4),
+             tam: C.tmin + Math.pow(r(4), 1.8) * (C.tmax - C.tmin),
+             per: 9000 + r(5) * 26000, fase: r(6) * AST_N, sent: r(7) < 0.5 ? -1 : 1,
+             deriva: (r(8) - 0.5) * 0.004 });
+  }
+  if (C.destrocos) {                       // lascas de metal que brilham quando pegam o sol
+    const nd = Math.floor((3 + h01(tx, ty, s + 99) * 6) * densidadeSetor());
+    for (let i = 0; i < nd; i++) {
+      const r = (k) => h01(tx * 13 + i, ty * 29 + k, s + 555 + i);
+      t.push({ lasca: true, x: r(1) * C.tile, y: r(2) * C.tile, c: 2 + r(3) * 5, l: 0.7 + r(4) * 1.4,
+               giro: (r(5) - 0.5) * 0.002, a0: r(6) * 6.28, pisca: 1800 + r(7) * 3000, fase: r(8) * 6000 });
+    }
+  }
+  if (_tilesAst.size > 600) _tilesAst.clear();
+  _tilesAst.set(chave, t);
+  return t;
+}
+
+function desenharCamadaAst(ci, t, tre) {
+  const C = CAMADAS_AST[ci];
+  const ox = (G.cam.x + tre.x) * C.z, oy = (G.cam.y + tre.y) * C.z;
+  const tx0 = Math.floor(ox / C.tile) - 1, tx1 = Math.floor((ox + VW) / C.tile) + 1;
+  const ty0 = Math.floor(oy / C.tile) - 1, ty1 = Math.floor((oy + VH) / C.tile) + 1;
+  for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) {
+    for (const a of tileAst(ci, tx, ty)) {
+      const x = tx * C.tile + a.x - ox + (a.deriva || 0) * t;
+      const y = ty * C.tile + a.y - oy;
+      if (x < -40 || y < -40 || x > VW + 40 || y > VH + 40) continue;
+      if (a.lasca) {
+        const ang = a.a0 + a.giro * t, br = Math.max(0, Math.sin((t + a.fase) / a.pisca * 6.28));
+        ctx.save(); ctx.translate(x, y); ctx.rotate(ang);
+        ctx.globalAlpha = 0.55; ctx.fillStyle = "#5d6068";
+        ctx.fillRect(-a.c / 2, -a.l / 2, a.c, a.l);
+        if (br > 0.9) {                                    // reflexo do sol na lasca
+          ctx.globalCompositeOperation = "lighter";
+          ctx.globalAlpha = (br - 0.9) * 8; ctx.fillStyle = "#fff4e0";
+          ctx.fillRect(-a.c / 2, -a.l / 2, a.c, a.l);
+          ctx.globalCompositeOperation = "source-over";
+        }
+        ctx.restore();
+        continue;
+      }
+      desenharAsteroide(a.v, x, y, a.tam, a.fase + a.sent * t / a.per * AST_N, C.alfa);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* poeira fina passando NA FRENTE de tudo: pontinhos quase transparentes que
+   andam mais que a câmera e dão a sensação de profundidade */
+function desenharPoeiraFrente(t, tre) {
+  const z = 1.35, tile = 520, ox = (G.cam.x + tre.x) * z, oy = (G.cam.y + tre.y) * z;
+  const tx0 = Math.floor(ox / tile), tx1 = Math.floor((ox + VW) / tile);
+  const ty0 = Math.floor(oy / tile), ty1 = Math.floor((oy + VH) / tile);
+  ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.fillStyle = "#dfe8ff";
+  for (let tx = tx0; tx <= tx1; tx++) for (let ty = ty0; ty <= ty1; ty++) {
+    for (let i = 0; i < 9; i++) {
+      const r = (k) => h01(tx * 7 + i, ty * 11 + k, 4242 + G.setor);
+      const x = tx * tile + r(1) * tile - ox, y = ty * tile + r(2) * tile - oy;
+      const s = 0.6 + r(3) * 1.3;
+      ctx.globalAlpha = 0.10 + r(4) * 0.22;
+      ctx.fillRect(x, y, s, s);
+    }
+  }
+  ctx.restore();
+}
+
+/* sol: fica no canto de cima à esquerda (de onde vem a luz das naves),
+   quase parado, com um brilho grande e um risco de lente bem fraco */
+let _spriteSol = null;
+function spriteSol() {
+  if (_spriteSol) return _spriteSol;
+  const c = document.createElement("canvas"); c.width = c.height = 256;
+  const x = c.getContext("2d"), g = x.createRadialGradient(128, 128, 0, 128, 128, 128);
+  g.addColorStop(0, "rgba(255,255,250,1)"); g.addColorStop(0.04, "rgba(255,250,230,1)");
+  g.addColorStop(0.09, "rgba(255,226,170,.55)"); g.addColorStop(0.25, "rgba(255,190,120,.16)");
+  g.addColorStop(0.55, "rgba(255,170,110,.05)"); g.addColorStop(1, "rgba(255,160,100,0)");
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  return (_spriteSol = c);
+}
+function desenharSol(t, tre) {
+  const sx = VW * 0.04 - (G.cam.x + tre.x) * 0.006, sy = VH * 0.02 - (G.cam.y + tre.y) * 0.006;
+  const R = Math.max(VW, VH) * 0.42;
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  ctx.globalAlpha = 1; ctx.drawImage(spriteSol(), sx - R, sy - R, R * 2, R * 2);
+  // reflexos de lente na direção do centro da tela
+  const dx = VW / 2 - sx, dy = VH / 2 - sy;
+  for (const [k, r, a] of [[0.55, 38, 0.06], [0.8, 18, 0.08], [1.25, 60, 0.04]]) {
+    const g = ctx.createRadialGradient(sx + dx * k, sy + dy * k, 0, sx + dx * k, sy + dy * k, r);
+    g.addColorStop(0, `rgba(255,220,180,${a})`); g.addColorStop(0.7, `rgba(200,220,255,${a * 0.5})`); g.addColorStop(1, "rgba(0,0,0,0)");
+    ctx.globalAlpha = 1; ctx.fillStyle = g; ctx.beginPath(); ctx.arc(sx + dx * k, sy + dy * k, r, 0, 6.29); ctx.fill();
+  }
+  ctx.restore();
+}
+
+/* planeta (e a lua dele), desenhado a partir da imagem 3D */
+function desenharCorpoCeleste(c, tre) {
+  if (!c) return;
+  const img = planetaImg(c.tipo);
+  if (!img) return;
+  const L = PLANETA_ANEIS[c.tipo] ? 2.4 : 1.15;          // a imagem cobre 2L raios de largura
+  const px = c.x - (G.cam.x + tre.x) * c.z, py = c.y - (G.cam.y + tre.y) * c.z;
+  const meia = c.r * L;
+  if (px < -meia || py < -meia || px > VW + meia || py > VH + meia) return;
+  /* pré-desenhado uma vez no tamanho de tela, já girado: cada quadro é só
+     uma cópia, e a imagem grande original sai da memória de vídeo */
+  const lado = Math.min(720, Math.ceil(meia * 2 * ESC));
+  if (!c.cache || c.cache.width !== lado) {
+    const cv2 = document.createElement("canvas"); cv2.width = cv2.height = lado;
+    const x2 = cv2.getContext("2d"); x2.imageSmoothingQuality = "high";
+    x2.translate(lado / 2, lado / 2); x2.rotate(c.giro || 0);
+    x2.drawImage(img, -lado / 2, -lado / 2, lado, lado);
+    c.cache = cv2;
+  }
+  ctx.globalAlpha = c.alfa;
+  ctx.drawImage(c.cache, px - meia, py - meia, meia * 2, meia * 2);
+  ctx.globalAlpha = 1;
+}
+
+/* estação: luzes de navegação, faróis, janelas e uma onda de luz correndo
+   pelo anel. Coordenadas medidas na figura (1600×835, centro = 0,0). */
+function luzesEstacao(t, w, h) {
+  const s = w / 1600, P = (x, y) => [(x - 800) * s, (y - 417) * s];
+  const ponto = (x, y, cor, r, a) => {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, r);
+    g.addColorStop(0, `rgba(255,255,255,${a})`); g.addColorStop(0.25, `rgba(${cor},${a * 0.8})`); g.addColorStop(1, `rgba(${cor},0)`);
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
+  };
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  // halo azul suave em volta da cúpula
+  let g = ctx.createRadialGradient(...P(880, 330), 0, ...P(880, 330), 360 * s);
+  g.addColorStop(0, "rgba(120,190,255,.10)"); g.addColorStop(1, "rgba(120,190,255,0)");
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(...P(880, 330), 360 * s, 0, 6.29); ctx.fill();
+  // anel: 30 luzes e uma onda que corre em volta
+  const a = 813 * s, b = 190 * s, rot = 0.326;
+  for (let i = 0; i < 30; i++) {
+    const th = i / 30 * 6.283, onda = Math.pow(Math.max(0, Math.cos(th - t / 700)), 10);
+    const ex = Math.cos(th) * a, ey = Math.sin(th) * b;
+    const x = ex * Math.cos(rot) - ey * Math.sin(rot), y = ex * Math.sin(rot) + ey * Math.cos(rot) + 3 * s;
+    ponto(x, y, "120,220,255", 10 + 16 * onda, 0.45 + 0.55 * onda);
+  }
+  // janelas da faixa de cima, acendendo e apagando devagar
+  for (let i = 0; i < 9; i++) {
+    const k = i / 8, x = 520 + k * 250, y = 268 + k * 120;
+    const a2 = 0.35 + 0.35 * Math.max(0, Math.sin(t / 1900 + i * 1.7));
+    ponto(...P(x, y), "255,214,140", 18, a2);
+  }
+  // farol vermelho na ponta da antena (pisca forte) e nas outras pontas
+  if ((t % 1600) < 180) ponto(...P(985, 8), "255,60,60", 34, 1);
+  ponto(...P(985, 8), "255,60,60", 8, 0.6);
+  if (((t + 400) % 2200) < 160) ponto(...P(944, 74), "255,90,90", 20, 0.9);
+  // estrobos brancos nas pontas do anel (duas piscadas seguidas)
+  const est = (t % 2400), dupla = est < 70 || (est > 180 && est < 250);
+  if (dupla) { ponto(...P(62, 70), "220,235,255", 40, 1); ponto(...P(1530, 600), "220,235,255", 40, 1); }
+  // luz azul do topo da cúpula, pulsando
+  ponto(...P(886, 266), "90,180,255", 20, 0.45 + 0.35 * Math.sin(t / 500));
+  // doca: verde, respirando
+  ponto(...P(910, 680), "90,255,160", 34, 0.30 + 0.25 * Math.sin(t / 800));
+  ctx.restore();
+}
+
+/* portal: brilho de fora, faíscas sendo puxadas para o túnel e luzes
+   piscando na moldura. `cor` é a mesma dos anéis (verde, vermelho ou dourado). */
+function luzesPortal(g, t, w, h, cor, carregando) {
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  // brilho em volta
+  let gr = ctx.createRadialGradient(0, 0, 0, 0, 0, w * 0.75);
+  gr.addColorStop(0, `rgba(${cor},${carregando ? 0.22 : 0.10})`); gr.addColorStop(1, `rgba(${cor},0)`);
+  ctx.fillStyle = gr; ctx.beginPath(); ctx.arc(0, 0, w * 0.75, 0, 6.29); ctx.fill();
+  // faíscas espiralando para dentro, no plano do túnel
+  ctx.save(); ctx.rotate(-0.61);
+  const n = carregando ? 30 : 18, per = carregando ? 900 : 2200;
+  for (let i = 0; i < n; i++) {
+    const f = ((t / per + i / n + g.x * 0.001) % 1);
+    const raio = w * 0.42 * (1 - f), an = i * 2.4 + f * 7;
+    const x = Math.cos(an) * raio, y = Math.sin(an) * raio * 0.34;
+    ctx.globalAlpha = Math.sin(f * Math.PI) * 0.9;
+    ctx.fillStyle = `rgba(${cor},1)`; ctx.beginPath(); ctx.arc(x, y, 1.2 + (1 - f) * 1.6, 0, 6.29); ctx.fill();
+  }
+  ctx.restore();
+  // luzes da moldura: quatro cantos piscando em sequência
+  const cantos = [[-0.36, -0.40], [0.30, -0.12], [0.36, 0.40], [-0.30, 0.12]];
+  cantos.forEach(([fx, fy], i) => {
+    const on = Math.max(0, Math.sin(t / 260 - i * 1.57));
+    const x = fx * w, y = fy * h, r = 5 + on * 9;
+    const gp = ctx.createRadialGradient(x, y, 0, x, y, r);
+    gp.addColorStop(0, `rgba(255,255,255,${0.3 + on * 0.6})`); gp.addColorStop(0.3, `rgba(${cor},${0.25 + on * 0.5})`); gp.addColorStop(1, `rgba(${cor},0)`);
+    ctx.globalAlpha = 1; ctx.fillStyle = gp; ctx.beginPath(); ctx.arc(x, y, r, 0, 6.29); ctx.fill();
+  });
+  ctx.restore();
+}
+
+let planeta = null, lua = null;
+function gerarNebulosa() {
+  /* um planeta por setor (o tipo segue a paleta do setor) e às vezes uma lua.
+     A posição é em "tela": com z pequeno ele quase não anda, então fica
+     sempre à vista em algum canto, como um astro distante de verdade. */
+  const tipo = TIPO_PLANETA[G.setor % TIPO_PLANETA.length];
+  const z = 0.04, aneis = PLANETA_ANEIS[tipo];
+  const r = aneis ? 105 + Math.random() * 40 : 140 + Math.random() * 80;
+  const lado = Math.random() < 0.5 ? 0.14 : 0.86;
+  planeta = { tipo, z, r, alfa: 0.80, giro: (Math.random() - 0.5) * 0.3,
+              x: VW * (lado + (Math.random() - 0.5) * 0.12) + WORLD.w / 2 * z,
+              y: VH * (0.25 + Math.random() * 0.5) + WORLD.h / 2 * z };
+  planetaImg(tipo);
+  lua = null;
+  if (Math.random() < 0.75) {
+    const lt = Math.random() < 0.5 ? "rochoso" : "gelo", lz = 0.06;
+    const ang = Math.random() * 6.28, d = r * (aneis ? 2.6 : 1.7);
+    lua = { tipo: lt, z: lz, r: 22 + Math.random() * 20, alfa: 0.85,
+            x: planeta.x - WORLD.w / 2 * z + Math.cos(ang) * d + WORLD.w / 2 * lz,
+            y: planeta.y - WORLD.h / 2 * z + Math.sin(ang) * d * 0.6 + WORLD.h / 2 * lz };
+    planetaImg(lt);
+  }
 }
 
 /* ---------- MISSÕES ---------- */
@@ -3778,26 +4073,59 @@ function tremorAtual() {
 
 /* Nebulosa e planeta, atrás de tudo, andando devagar por serem longe. */
 function desenharFundo(t, tre) {
-  if (planeta) {
-    const px = planeta.x - (G.cam.x + tre.x) * planeta.z;
-    const py = planeta.y - (G.cam.y + tre.y) * planeta.z;
-    if (px > -planeta.r*1.4 && py > -planeta.r*1.4 &&
-        px < VW + planeta.r*1.4 && py < VH + planeta.r*1.4) {
-      const gr = ctx.createRadialGradient(px - planeta.r*0.35, py - planeta.r*0.35, planeta.r*0.1,
-                                          px, py, planeta.r);
-      gr.addColorStop(0, planeta.cor2); gr.addColorStop(0.55, planeta.cor);
-      gr.addColorStop(1, "rgba(4,6,15,0)");
-      ctx.globalAlpha = 0.30; ctx.fillStyle = gr;
-      ctx.beginPath(); ctx.arc(px, py, planeta.r, 0, 6.29); ctx.fill();
-      ctx.globalAlpha = 1;
-    }
-  }
-  /* Três camadas: a nebulosa grande e lenta lá no fundo, uma segunda menor e
-     de outra cor por cima, e a poeira com as estrelas de campo na frente. */
+  /* Camadas: sol lá no fundo, a nebulosa grande e lenta, o planeta e a lua,
+     faixas escuras de poeira por cima (dão profundidade e cobrem um pouco o
+     planeta), a segunda nebulosa, a poeira com estrelas de campo e, mais
+     perto, véus claros de nebulosa que andam mais rápido. */
   const pal = paletaAtual();
+  desenharSol(t, tre);
   camadaFundo(texNebulosa, pal.a, 0.055, 0.50, 2.4, tre);
-  camadaFundo(texNebulosa, pal.b, 0.105, 0.34, 1.5, tre);
-  camadaFundo(texPoeira,   pal.p, 0.170, 0.42, 1.2, tre);
+  desenharCorpoCeleste(planeta, tre);
+  desenharCorpoCeleste(lua, tre);
+  /* as camadas novas (faixas escuras e véus claros) vêm pré-misturadas com
+     as antigas: a tela continua pintada o mesmo número de vezes por quadro */
+  camadaPronta(compNebulosa(pal), 0.105, 1.5, tre);
+  camadaPronta(compPoeira(pal), 0.170, 1.2, tre);
+}
+/* tinta que só serviu para montar uma camada pronta: sai da memória */
+function liberarTinta(img, cor) { delete tintas[img.src + "|" + cor]; }
+/* nebulosa da cor B + faixas escuras de poeira (a mesma nuvem, espelhada) */
+const _comp = {};
+function compNebulosa(pal) {
+  const k = "n" + pal.b;
+  if (_comp[k]) return _comp[k];
+  const tb = tingir(texNebulosa, pal.b), te = tingir(texNebulosa, "#04050b");
+  if (!tb || !te) return null;
+  const c = document.createElement("canvas"); c.width = c.height = 512;
+  const x = c.getContext("2d");
+  x.globalAlpha = 0.30; x.drawImage(tb, 0, 0);
+  x.globalAlpha = 0.42; x.translate(512, 0); x.scale(-1, 1); x.drawImage(te, 0, 0);
+  liberarTinta(texNebulosa, "#04050b");
+  return (_comp[k] = c);
+}
+/* poeira com estrelas de campo + véus claros de nebulosa (soma luz) */
+function compPoeira(pal) {
+  const k = "p" + pal.p + pal.a;
+  if (_comp[k]) return _comp[k];
+  const tp = tingir(texPoeira, pal.p), tv = tingir(texNebulosa, pal.a);
+  if (!tp || !tv) return null;
+  const c = document.createElement("canvas"); c.width = c.height = 512;
+  const x = c.getContext("2d");
+  x.globalAlpha = 0.42; x.drawImage(tp, 0, 0);
+  x.globalCompositeOperation = "lighter"; x.globalAlpha = 0.12;
+  x.translate(512, 512); x.rotate(Math.PI); x.drawImage(tv, 0, 0);
+  liberarTinta(texPoeira, pal.p);
+  return (_comp[k] = c);
+}
+/* repete uma camada já pronta (sem tingir nem alfa) */
+function camadaPronta(c, z, escala, tre) {
+  if (!c) return;
+  const w = c.width * escala, h = c.height * escala;
+  let ox = -(((G.cam.x + tre.x) * z) % w); if (ox > 0) ox -= w;
+  let oy = -(((G.cam.y + tre.y) * z) % h); if (oy > 0) oy -= h;
+  for (let x = ox; x < VW; x += w)
+    for (let y = oy; y < VH; y += h)
+      ctx.drawImage(c, x, y, w, h);
 }
 
 /* Um halo embaixo da nave, mais forte quando os motores estão acesos.
@@ -3870,9 +4198,16 @@ function desenhar(t) {
     if (st.z > 0.8 && st.r > 1.6) {            // as maiores ganham um halo
       ctx.globalAlpha *= 0.28;
       ctx.beginPath(); ctx.arc(x + st.r/2, y + st.r/2, st.r*2.6, 0, 6.29); ctx.fill();
+      if (st.z > 0.9) {                        // e as mais perto, uma cruz de luz
+        const c = x + st.r/2, d = y + st.r/2, L = st.r * 4.5 * cintila;
+        ctx.globalAlpha = 0.35 * cintila;
+        ctx.fillRect(c - L, d - 0.4, L * 2, 0.8); ctx.fillRect(c - 0.4, d - L, 0.8, L * 2);
+      }
     }
   }
   ctx.globalAlpha = 1;
+  // asteroides e destroços em três profundidades, atrás do jogo
+  for (let ci = 0; ci < CAMADAS_AST.length; ci++) desenharCamadaAst(ci, t, tre);
 
   ctx.save();
   ctx.translate(-G.cam.x - tre.x, -G.cam.y - tre.y);
@@ -3967,6 +4302,7 @@ function desenhar(t) {
   ctx.globalAlpha = 1;
   ctx.restore();
 
+  desenharPoeiraFrente(t, tre);
   desenharVinheta();
   desenharRadar();
   desenharAvisoFora(t);
@@ -5984,6 +6320,7 @@ function desenharEstacao(t) {
     }
     ctx.globalAlpha = 1;
     ctx.globalCompositeOperation = "source-over";
+    luzesEstacao(t, w, h);
     ctx.restore();
   } else {
     // enquanto a figura não carrega, um anel simples marca o lugar da base
@@ -6020,6 +6357,7 @@ function desenharPortal(g, t) {
        dá a sensação de a parte circular estar rodando. */
     const cor = carregando ? "255,209,102" : ok ? "138,255,216" : "255,122,122";
     const ritmo = carregando ? 260 : 1500;
+    luzesPortal(g, t, w, h, cor, carregando);
     ctx.globalCompositeOperation = "lighter";
     ctx.rotate(-0.61);                              // alinha com o eixo do túnel
     for (let i = 0; i < 3; i++) {
