@@ -3920,6 +3920,7 @@ function desenharNaveSprite(s, x, y, ang, t) {
 /* Formato de gota deitada: arredondada no bocal, mais larga logo depois e
    afinando até uma ponta ROMBA (a tangente na ponta é vertical, então ela
    fecha em curva em vez de bico de triângulo). */
+const TAMANHO_CHAMA = 1;        // 1 = padrão; aumente ou diminua para ajustar
 function formaDeChama(base, dy, L, A) {
   ctx.beginPath();
   ctx.moveTo(base, dy - A/2);
@@ -3931,8 +3932,8 @@ function formaDeChama(base, dy, L, A) {
 function bicoDeChama(w, h, v, dy, t, semente, cor = COR_MOTOR) {
   const base = -w * 0.46;                      // saída do bico, vista de cima
   const tremo = 0.85 + Math.sin(t/38 + semente) * 0.10 + Math.sin(t/17 + semente*3) * 0.05;
-  const comp = w * (0.16 + 0.42 * v) * tremo;
-  const alt  = h * (0.17 + 0.05 * v);
+  const comp = w * (0.12 + 0.32 * v) * tremo * TAMANHO_CHAMA;   // comprimento
+  const alt  = h * (0.15 + 0.04 * v) * TAMANHO_CHAMA;           // largura
   ctx.save();
   ctx.globalCompositeOperation = "lighter";
   // halo macio em volta, que arredonda ainda mais o contorno
@@ -3959,9 +3960,12 @@ function bicoDeChama(w, h, v, dy, t, semente, cor = COR_MOTOR) {
 }
 
 /* Jato saindo por trás, crescendo com a velocidade. A sua nave tem dois. */
+/* A chama sai sempre reta para trás, presa ao bico (decisão de jogo: mesmo
+   andando de lado ela não dobra). chamaRelativa() continua aí caso um dia
+   se queira voltar a dobrar — é só usar `dobra` e `frente` aqui. */
 function chamaDoMotor(w, h, t) {
-  const { dobra, frente } = chamaRelativa();
-  const v = clamp(motor.impulso + motor.arranque * 0.5, 0, 1.3) * frente;
+  const dobra = 0;
+  const v = clamp(motor.impulso + motor.arranque * 0.5, 0, 1.3);
   if (v <= 0.03) return;
   const base = -w * 0.46;
   for (const [dy, sem] of [[-h*0.16, 0], [h*0.16, 1.7]]) {
