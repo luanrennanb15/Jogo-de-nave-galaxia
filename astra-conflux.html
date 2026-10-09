@@ -3808,17 +3808,39 @@ function desenharTiro(b, t) {
    Com vários quadros, a inclinação escolhe o quadro — é rotação de verdade,
    vinda do modelo 3D. Com um quadro só, ela é fingida achatando e cisalhando
    o sprite, que num jogo visto de cima engana bem o olho. */
-/* Um quadro da folha inclinada: escolhe a direção mais próxima de `ang` e a
-   folha de inclinação mais próxima de `inc` (−1 a 1). Sempre UMA figura só —
-   misturar a reta com a deitada deixava um "fantasma" das duas na curva. */
-function quadroIncl(c, x, y, ang, inc, escala) {
+/* Um quadro da folha inclinada.
+   Direção: pega o desenho mais próximo de `ang` e gira o que sobra (no máximo
+   meio degrau, ~2,8°) no plano do chão — achatado pela câmera, para bater com
+   a perspectiva. Sem isso a nave andava em degraus de 5,6° enquanto a chama
+   do motor girava liso, e a diferença entre os dois parecia tremedeira.
+   Inclinação de curva: a folha mais próxima de `inc` (−1 a 1), sempre UMA
+   figura só, e com folga (`est`) para não ficar pulando entre duas vizinhas
+   quando `inc` passa bem em cima da divisa. */
+const INCL_FOLGA = 0.3;          // fração de um degrau de inclinação
+const estInclJogador = { r: null };
+function quadroIncl(c, x, y, ang, inc, escala, est) {
+  const passo = 2 * Math.PI / c.N;
   const a = ((ang % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
-  const i = Math.round(a / (2*Math.PI) * c.N) % c.N;
+  const i = Math.round(a / passo) % c.N;
+  let resto = a - i * passo;
+  if (resto >  Math.PI) resto -= 2*Math.PI;
+  if (resto < -Math.PI) resto += 2*Math.PI;
   const sx = (i % c.cols) * c.fw, sy = Math.floor(i / c.cols) * c.fh;
   const w = c.fw / c.px * escala, h = c.fh / c.px * escala;
+
   const n = c.imgs.length;
-  const r = Math.round((clamp(inc, -1, 1) + 1) / 2 * (n - 1));
-  ctx.drawImage(c.imgs[r], sx, sy, c.fw, c.fh, x - w/2, y - h/2, w, h);
+  const pos = (clamp(inc, -1, 1) + 1) / 2 * (n - 1);      // 0 .. n-1, contínuo
+  let r = Math.round(pos);
+  if (est) {
+    if (est.r != null && Math.abs(pos - est.r) < 0.5 + INCL_FOLGA) r = est.r;
+    est.r = r;
+  }
+
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.scale(1, c.cosInc); ctx.rotate(resto); ctx.scale(1, 1 / c.cosInc);
+  ctx.drawImage(c.imgs[r], sx, sy, c.fw, c.fh, -w/2, -h/2, w, h);
+  ctx.restore();
 }
 
 function desenharNaveSprite(s, x, y, ang, t) {
@@ -3834,13 +3856,13 @@ function desenharNaveSprite(s, x, y, ang, t) {
     chamaDoMotor(w, h, t);
     ctx.restore();
     const inc = inclinacaoTita * (s.inv || 1);
-    quadroIncl(ci, x, y, ang, inc, respiro);
+    quadroIncl(ci, x, y, ang, inc, respiro, estInclJogador);
     const desde = G.tempo - (p.ultimoDano || -9999);       // clarão ao apanhar
     if (desde < 260) {
       ctx.save();
       ctx.globalAlpha *= 0.55 * (1 - desde/260);
       ctx.globalCompositeOperation = "lighter";
-      quadroIncl(ci, x, y, ang, 0, respiro);
+      quadroIncl(ci, x, y, ang, inc, respiro, { r: estInclJogador.r });
       ctx.restore();
     }
     return;
@@ -4440,7 +4462,8 @@ function desenharInimigo(en, t) {
     const ciP = ed.nave ? inclDaNave(ed.nave) : null;
     if (sp && ciP) {
       desenharDronesInimigo(en);
-      quadroIncl(ciP, en.x, en.y, en.ang, (en.inc || 0) * (sp.inv || 1), r * 3.2 / sp.tam);
+      quadroIncl(ciP, en.x, en.y, en.ang, (en.inc || 0) * (sp.inv || 1), r * 3.2 / sp.tam,
+                 en.estIncl || (en.estIncl = { r: null }));
     } else if (sp) {
       desenharDronesInimigo(en);
       const w = r * 3.2 * (sp.mold || 1), h = w * sp.alt / sp.larg;
