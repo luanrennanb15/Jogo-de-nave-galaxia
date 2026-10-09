@@ -4567,7 +4567,22 @@ function desenharTiro(b, t) {
    Inclinação de curva: são 13 folhas de 7,5° em 7,5°, misturadas do mesmo
    jeito entre as duas vizinhas. (O "fantasma" de antes vinha de misturar a
    reta com uma deitada 30°; entre vizinhas de 7,5° a diferença não aparece.) */
-function quadroIncl(c, x, y, ang, inc, escala) {
+/* Mistura entre quadros vizinhos SEM fantasma: as naves grandes (Sentinela,
+   Devastador, Titã) não são planas, então misturar dois desenhos meio a meio
+   deixa as bordas dobradas. Agora:
+   - direção: parada ou virando devagar, mostra só o quadro mais perto (o
+     resto do ângulo é a rotação residual, que não deixa degrau); virando
+     rápido, faz uma troca curta perto do meio do passo, e a troca ainda é
+     "dominante + um pouco do outro", nunca 50/50 parado
+   - inclinação de curva: mesma ideia, com a troca concentrada no meio
+   `est` guarda a velocidade de giro de quem está sendo desenhado (a sua nave
+   ou o piloto inimigo); sem ele, vale o quadro mais perto. */
+const suave01 = v => v <= 0 ? 0 : v >= 1 ? 1 : v * v * (3 - 2 * v);
+function trocaCurta(f, larg) {                // f 0..1 no passo -> peso do vizinho
+  if (larg <= 0.01) return f >= 0.5 ? 1 : 0;
+  return suave01((f - (0.5 - larg / 2)) / larg);
+}
+function quadroIncl(c, x, y, ang, inc, escala, est) {
   const passo = 2 * Math.PI / c.N;
   const a = ((ang % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
   const d0 = Math.floor(a / passo), fd = a / passo - d0;
@@ -4577,23 +4592,46 @@ function quadroIncl(c, x, y, ang, inc, escala) {
   const r0 = Math.min(n - 2, Math.floor(pos)), fr = pos - r0;
   const a0 = ctx.globalAlpha;
 
-  const desenhaDirecao = (di, alfa) => {
-    const i = di % c.N;
+  // velocidade de giro (rad/ms), suavizada, guardada em quem está sendo desenhado
+  let giro = 0;
+  if (est) {
+    if (est._qT !== G.tempo) {
+      if (est._qA != null && G.tempo > est._qT) {
+        let da = a - est._qA; da = Math.atan2(Math.sin(da), Math.cos(da));
+        const v = Math.abs(da) / (G.tempo - est._qT);
+        est._qG = (est._qG || 0) * 0.75 + v * 0.25;
+      }
+      est._qA = a; est._qT = G.tempo;
+    }
+    giro = est._qG || 0;
+  }
+  // parada: quadro mais perto; virando: troca curta (25% a 45% do passo, conforme a velocidade)
+  const largD = giro < 0.0002 ? 0 : 0.25 + 0.2 * clamp(giro / 0.004, 0, 1);
+  const tD = trocaCurta(fd, largD);
+  const tR = trocaCurta(fr, 0.3);
+
+  const desenhaFolha = (di, ri, alfa) => {
+    const i = ((di % c.N) + c.N) % c.N;
     const resto = a - di * passo;                        // entre −passo e +passo
     const sx = (i % c.cols) * c.fw, sy = Math.floor(i / c.cols) * c.fh;
     ctx.save();
     ctx.translate(x, y);
     ctx.scale(1, c.cosInc); ctx.rotate(resto); ctx.scale(1, 1 / c.cosInc);
     ctx.globalAlpha = a0 * alfa;
-    ctx.drawImage(c.imgs[r0], sx, sy, c.fw, c.fh, -w/2, -h/2, w, h);
-    if (fr > 0.02) {
-      ctx.globalAlpha = a0 * alfa * fr;
-      ctx.drawImage(c.imgs[r0 + 1], sx, sy, c.fw, c.fh, -w/2, -h/2, w, h);
-    }
+    ctx.drawImage(c.imgs[ri], sx, sy, c.fw, c.fh, -w/2, -h/2, w, h);
     ctx.restore();
   };
-  desenhaDirecao(d0, 1);
-  if (fd > 0.02) desenhaDirecao(d0 + 1, fd);
+  const desenhaDirecao = (di, alfa) => {
+    // inclinação: a folha dominante cheia, a outra só um pouco por cima
+    const rDom = tR < 0.5 ? r0 : r0 + 1, rOut = tR < 0.5 ? r0 + 1 : r0;
+    const mR = Math.min(tR, 1 - tR);
+    desenhaFolha(di, rDom, alfa);
+    if (mR > 0.02) desenhaFolha(di, rOut, alfa * mR);
+  };
+  const dDom = tD < 0.5 ? d0 : d0 + 1, dOut = tD < 0.5 ? d0 + 1 : d0;
+  const mD = Math.min(tD, 1 - tD);
+  desenhaDirecao(dDom, 1);
+  if (mD > 0.02) desenhaDirecao(dOut, mD);
 }
 
 function desenharNaveSprite(s, x, y, ang, t) {
@@ -4609,13 +4647,13 @@ function desenharNaveSprite(s, x, y, ang, t) {
     chamaDoMotor(w, h, t);
     ctx.restore();
     const inc = inclinacaoTita * (s.inv || 1);
-    quadroIncl(ci, x, y, ang, inc, respiro);
+    quadroIncl(ci, x, y, ang, inc, respiro, p);
     const desde = G.tempo - (p.ultimoDano || -9999);       // clarão ao apanhar
     if (desde < 260) {
       ctx.save();
       ctx.globalAlpha *= 0.55 * (1 - desde/260);
       ctx.globalCompositeOperation = "lighter";
-      quadroIncl(ci, x, y, ang, inc, respiro);
+      quadroIncl(ci, x, y, ang, inc, respiro, p);
       ctx.restore();
     }
     return;
@@ -5633,7 +5671,7 @@ function desenharInimigo(en, t) {
     const ciP = ed.nave ? inclDaNave(ed.nave) : null;
     if (sp && ciP) {
       desenharDronesInimigo(en);
-      quadroIncl(ciP, en.x, en.y, en.ang, (en.inc || 0) * (sp.inv || 1), r * 3.2 / sp.tam);
+      quadroIncl(ciP, en.x, en.y, en.ang, (en.inc || 0) * (sp.inv || 1), r * 3.2 / sp.tam, en);
     } else if (sp) {
       desenharDronesInimigo(en);
       const w = r * 3.2 * (sp.mold || 1), h = w * sp.alt / sp.larg;
