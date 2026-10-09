@@ -1972,8 +1972,8 @@ function spawnCaixa() {
   const r = Math.random();
   let tipo = "cred";
   if (r > 0.82) tipo = "ucb"; else if (r > 0.6) tipo = "mcb";
-  else if (r > 0.44) tipo = "foguete"; else if (r > 0.24) tipo = "recurso";
-  G.caixas.push({ x:p.x, y:p.y, tipo, nasceu: G.tempo });
+  else if (r > 0.44) tipo = "foguete";          // minério não sai mais da caixa
+  G.caixas.push({ x:p.x, y:p.y, tipo, nasceu: G.tempo, sem: Math.random() * 1000 });
 }
 
 /* Estrelas em três profundidades, cada uma piscando no seu ritmo. As de
@@ -4225,21 +4225,16 @@ function abrirCaixa(c) {
   if (c.tipo === "cred")      { const q = Math.round(2200*n*(0.6+Math.random())); G.creditos += q; G.stats.ganho += q;
                                 registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#ffd166">+${fmt(q)} cr</span>`);
                                 avisoColeta(`+${fmt(q)} créditos`); }
-  else if (c.tipo === "mcb")  { const q = 60+Math.floor(Math.random()*140); G.municao.mcb += q;
-                                registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#7ee8ff">+${q} MCB-25</span>`);
-                                avisoColeta(`+${q} MCB-25`); }
-  else if (c.tipo === "ucb")  { const q = 20+Math.floor(Math.random()*45);  G.municao.ucb += q;
+  else if (c.tipo === "mcb")  { const q = 60+Math.floor(Math.random()*140); G.municao.lcb20 = (G.municao.lcb20 || 0) + q;
+                                registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#7ee8ff">+${q} LCB-20</span>`);
+                                avisoColeta(`+${q} LCB-20`); }
+  else if (c.tipo === "ucb")  { const q = 20+Math.floor(Math.random()*45);  G.municao.ucb100 = (G.municao.ucb100 || 0) + q;
                                 registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#c66bff">+${q} UCB-100</span>`);
                                 avisoColeta(`+${q} UCB-100`); }
   else if (c.tipo === "foguete") { const q = 3+Math.floor(Math.random()*6); G.foguetes.R310 += q;
                                 registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#ff8a3d">+${q} foguetes R-310</span>`);
                                 avisoColeta(`+${q} foguetes R-310`); }
-  else { const k = RES_DROP[Math.floor(Math.random()*RES_DROP.length)];
-         const q = Math.min(cargoMax()-cargaUsada(), 3+Math.floor(Math.random()*8));
-         if (q > 0) { G.carga[k] += q; progredirMissao("coletar", k, q);
-                      registrarGanho(`<b>Caixa de bônus</b><br><span style="color:${RES[k].cor}">+${q} ${RES[k].nome}</span>`);
-                      avisoColeta(`+${q} ${RES[k].nome}`); }
-         else toast("Caixa encontrada, mas a carga está cheia"); }
+  /* caixa de minério de saves/versões antigas: não existe mais */
   efeitoColeta(c.x, c.y, { cred:"#ffd166", mcb:"#7ee8ff", ucb:"#c66bff", foguete:"#ff8a3d" }[c.tipo] || "#8affd8");
   beep(880, 0.05);
 }
@@ -6769,17 +6764,93 @@ function desenharPortal(g, t) {
      botão Saltar, que surge logo acima dele quando você chega perto. */
 }
 
+/* Caixa de bônus: um quadrado branco forte girando no centro, dentro de um
+   cosmo de nebulosa cinza que gira devagar, com partículas brancas em volta.
+   A nuvem é feita uma vez (canvas) e só girada a cada quadro. */
+let _nuvemCaixa = null;
+function nuvemCaixa() {
+  if (_nuvemCaixa) return _nuvemCaixa;
+  const S = 128, c = document.createElement("canvas"); c.width = c.height = S;
+  const x = c.getContext("2d");
+  const rnd = (() => { let a = 7919; return () => (a = (a * 1664525 + 1013904223) >>> 0) / 4294967296; })();
+  // tufos de nuvem cinza, mais densos no meio
+  for (let i = 0; i < 40; i++) {
+    const ang = rnd() * 6.283, d = S * (0.10 + rnd() * 0.24);      // em anel: o miolo fica escuro para o quadrado aparecer
+    const px = S/2 + Math.cos(ang) * d, py = S/2 + Math.sin(ang) * d * 0.85;
+    const r = S * (0.06 + rnd() * 0.10), tom = 120 + (rnd() * 60) | 0;
+    const g = x.createRadialGradient(px, py, 0, px, py, r);
+    g.addColorStop(0, `rgba(${tom},${tom},${tom + 10},${0.16 + rnd() * 0.14})`);
+    g.addColorStop(1, `rgba(${tom},${tom},${tom + 8},0)`);
+    x.fillStyle = g; x.beginPath(); x.arc(px, py, r, 0, 6.29); x.fill();
+  }
+  // braços em espiral bem leves
+  for (let b = 0; b < 2; b++) for (let i = 0; i < 60; i++) {
+    const u = i / 60, ang = b * Math.PI + u * 3.6, d = S * (0.12 + u * 0.28);
+    const px = S/2 + Math.cos(ang) * d, py = S/2 + Math.sin(ang) * d * 0.85, r = S * 0.035 * (1 - u * 0.4);
+    const g = x.createRadialGradient(px, py, 0, px, py, r);
+    g.addColorStop(0, `rgba(200,206,218,${0.20 * (1 - u * 0.7)})`); g.addColorStop(1, "rgba(205,210,220,0)");
+    x.fillStyle = g; x.beginPath(); x.arc(px, py, r, 0, 6.29); x.fill();
+  }
+  // poeira fina escura e pontinhos claros presos na nuvem
+  for (let i = 0; i < 70; i++) {
+    const ang = rnd() * 6.283, d = Math.pow(rnd(), 0.7) * S * 0.36;
+    x.fillStyle = rnd() < 0.5 ? "rgba(20,22,28,.35)" : `rgba(235,240,255,${0.25 + rnd() * 0.4})`;
+    x.fillRect(S/2 + Math.cos(ang) * d, S/2 + Math.sin(ang) * d * 0.85, 1, 1);
+  }
+  // borda some suave
+  x.globalCompositeOperation = "destination-in";
+  const m = x.createRadialGradient(S/2, S/2, S * 0.18, S/2, S/2, S * 0.5);
+  m.addColorStop(0, "rgba(0,0,0,1)"); m.addColorStop(1, "rgba(0,0,0,0)");
+  x.fillStyle = m; x.fillRect(0, 0, S, S);
+  _nuvemCaixa = c;
+  return c;
+}
+
 function desenharCaixa(c, t) {
-  const cores = { cred:"#ffd166", mcb:"#7ee8ff", ucb:"#c66bff", foguete:"#ff8a3d", recurso:"#8affd8" };
-  const cor = cores[c.tipo] || "#8affd8";
-  const fl = Math.sin(t/300 + c.x)*3;
-  ctx.save(); ctx.translate(c.x, c.y + fl); ctx.rotate(t/1400);
-  ctx.globalAlpha = .2; ctx.fillStyle = cor;
-  ctx.beginPath(); ctx.arc(0,0,20,0,6.29); ctx.fill();
-  ctx.globalAlpha = 1;
-  ctx.fillStyle = cor; ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 1.5;
-  ctx.beginPath(); ctx.rect(-8,-8,16,16); ctx.fill(); ctx.stroke();
+  const sem = c.sem || (c.x * 0.013 + c.y * 0.007);
+  const fl = Math.sin(t / 900 + sem) * 2;
+  const surge = Math.min(1, (G.tempo - (c.nasceu || 0)) / 600);
+  const cx = c.x, cy = c.y + fl, R = 40;
+  const nv = nuvemCaixa();
+  ctx.save(); ctx.translate(cx, cy);
+  // nebulosa: duas camadas girando em sentidos opostos
+  ctx.globalAlpha = 0.95 * surge;
+  ctx.rotate(t / 6000 + sem);
+  ctx.drawImage(nv, -R, -R, R * 2, R * 2);
+  ctx.rotate(-t / 3000 - sem * 2);
+  ctx.globalAlpha = 0.6 * surge;
+  ctx.drawImage(nv, -R * 0.8, -R * 0.8, R * 1.6, R * 1.6);
   ctx.restore();
+  // partículas brancas orbitando e piscando
+  ctx.globalCompositeOperation = "lighter";
+  ctx.fillStyle = "#ffffff";
+  for (let i = 0; i < 18; i++) {
+    const h1 = h01(i, 3, sem | 0), h2 = h01(i, 5, sem | 0), h3 = h01(i, 7, sem | 0);
+    const raio = 10 + h1 * 24, vel = (0.25 + h2 * 0.5) * (i % 2 ? 1 : -1);
+    const a = h3 * 6.283 + t / 1000 * vel;
+    const pis = 0.5 + 0.5 * Math.sin(t / (260 + h2 * 400) + i * 1.7);
+    ctx.globalAlpha = (0.25 + 0.65 * pis) * surge;
+    const r = 0.9 + h1 * 1.2;
+    ctx.fillRect(cx + Math.cos(a) * raio - r / 2, cy + Math.sin(a) * raio * 0.85 - r / 2, r, r);
+  }
+  // brilho do núcleo
+  const pulso = 0.85 + 0.15 * Math.sin(t / 380 + sem);
+  ctx.globalAlpha = 0.35 * pulso * surge;
+  const gb = 13;
+  ctx.drawImage(spriteBrilho("#ffffff"), cx - gb, cy - gb, gb * 2, gb * 2);
+  ctx.globalCompositeOperation = "source-over";
+  // quadrado branco forte girando, com um contorno fino girando ao contrário
+  ctx.save(); ctx.translate(cx, cy);
+  ctx.rotate(-t / 1300 + sem);
+  ctx.globalAlpha = 0.5 * surge; ctx.strokeStyle = "#e8eeff"; ctx.lineWidth = 1;
+  ctx.strokeRect(-8.5, -8.5, 17, 17);
+  ctx.rotate(t / 1300 * 2 + sem);
+  ctx.globalAlpha = surge;
+  ctx.fillStyle = "#ffffff"; ctx.shadowColor = "rgba(255,255,255,.9)"; ctx.shadowBlur = 8;
+  ctx.fillRect(-5.5, -5.5, 11, 11);
+  ctx.shadowBlur = 0;
+  ctx.restore();
+  ctx.globalAlpha = 1;
 }
 
 function desenharRadar() {
@@ -6811,7 +6882,7 @@ function desenharRadar() {
     ctx.beginPath(); ctx.arc(x + g.x*sx, y + g.y*sy, 4.5, 0, 6.29); ctx.stroke();
   }
   ctx.setLineDash([]);
-  ctx.fillStyle = "rgba(255,209,102,.85)";
+  ctx.fillStyle = "rgba(235,240,255,.9)";
   for (const c of G.caixas) ctx.fillRect(x+c.x*sx-1, y+c.y*sy-1, 3,3);
   for (const m of (G.minerios || [])) if (minerioPronto(m)) {
     ctx.fillStyle = RES[m.tipo].cor; ctx.fillRect(x+m.x*sx-1, y+m.y*sy-1, 2,2);
