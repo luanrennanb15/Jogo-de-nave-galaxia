@@ -803,10 +803,11 @@ const MODULOS = {
    rajada de 4, esfria e sai de novo sozinha enquanto você estiver atacando.
    DRNO-25 não fere o casco: rouba o escudo do inimigo e passa para o seu. */
 const AMMO = {
-  lcb10:  { nome:"LCB-10",  mult:1,   preco:0,   infinita:true },
-  lcb20:  { nome:"LCB-20",  mult:2,   preco:22 },
-  mcb30:  { nome:"MCB-30",  mult:3,   preco:60 },
-  ucb100: { nome:"UCB-100", mult:4,   preco:150 },
+  /* cada munição tem a sua cor de tiro: dá para saber o calibre de longe */
+  lcb10:  { nome:"LCB-10",  mult:1,   preco:0,   infinita:true, cor:"#ff4d4d" },   // vermelho
+  lcb20:  { nome:"LCB-20",  mult:2,   preco:22,  cor:"#4dff88" },                  // verde
+  mcb30:  { nome:"MCB-30",  mult:3,   preco:60,  cor:"#4db8ff" },                  // azul
+  ucb100: { nome:"UCB-100", mult:4,   preco:150, cor:"#c084ff" },                  // roxo
   rsb300: { nome:"RSB-300", mult:5,   preco:400, cor:"#ff8a3d", rajada:4, cd:2000, forma:"rajada" },
   drno25: { nome:"DRNO-25", mult:2.5, preco:260, cor:"#4cc9ff", rouba:true, forma:"orb" },
 };
@@ -1790,7 +1791,7 @@ function iniciarSetor(estado) {
   }
   rastro = []; inclinacaoTita = 0; poeira = []; choques = [];
   faiscasMotor = []; motor.impulso = 0; motor.arranque = 0;
-  impactos = []; danoParticulas = [];
+  impactos = []; danoParticulas = []; claroes = [];
   tremor = { forca: 0, ate: 0 };
   G.inimigos = []; G.loot = []; G.caixas = []; G.particulas = []; G.danos = []; G.tiros = [];
   G.coleta = null; G.salto = null; G.saltoAlvo = null; G.portalPerto = null;
@@ -2409,8 +2410,12 @@ function atualizar(dt) {
     gastarMunicao(G.ammoSel, Math.max(1, canhoesNave()));
     // o dano só acontece quando o tiro chega no alvo
     const am = AMMO[G.ammoSel] || AMMO.lcb10;
+    ladoCanhao = -ladoCanhao;                       // alterna esquerdo/direito
+    const boca = bocaDoCanhao(ladoCanhao);
+    const corTiro = am.cor || corLaser();
     atirarLaser(p, p.alvo, dmgTotal() * (0.9 + Math.random()*0.2),
-      am.cor || corLaser(), true, false, { rouba: !!am.rouba, forma: am.forma });
+      corTiro, true, false, { rouba: !!am.rouba, forma: am.forma, pos: boca });
+    clarao(boca.x, boca.y, corTiro, 11, 120);
     p.alvo.agro = true;
     p.alvo.permitido = T + PERMISSAO_REVIDE;
     beep(320, 0.04);
@@ -2646,7 +2651,13 @@ function atualizar(dt) {
           b.salva.total += b.dano;
           fecharSalva(b.salva, b.alvo.x, b.alvo.y);
         }
-        b.foguete ? explosao(b.alvo.x, b.alvo.y, b.cor || "#ffb347", 16) : faisca(b.alvo.x, b.alvo.y, b.cor);
+        if (b.foguete) explosao(b.alvo.x, b.alvo.y, b.cor || "#ffb347", 16);
+        else {
+          // o clarão fica na casca do inimigo, do lado de onde o tiro veio
+          const ra = ((b.alvo.d && b.alvo.d.raio) || 16) * 0.6;
+          const ang = Math.atan2(b.y - b.alvo.y, b.x - b.alvo.x);
+          impactoLuminoso(b.alvo.x + Math.cos(ang)*ra, b.alvo.y + Math.sin(ang)*ra, b.cor);
+        }
         if (b.alvo.hp <= 0) matarInimigo(b.alvo);
       } else {
         // na zona segura o tiro só machuca se vier de quem você está atacando —
@@ -2761,6 +2772,71 @@ function atualizar(dt) {
 
 /* Cria um projétil. Ele persegue o alvo, então nunca erra — o que muda
    em relação ao feixe antigo é que o dano só entra quando o tiro chega. */
+/* ===================== CANHÕES E BRILHO DOS TIROS =====================
+   Onde ficam os canhões de cada nave, em frações do comprimento (`tam`):
+   x para a frente a partir do centro, y para o lado. Os tiros saem
+   alternando entre os dois lados. Nave sem entrada usa CANHAO_PADRAO. */
+const CANHOES = {
+  faisca:     { x: 0.12, y: 0.40 },     // os dois canos nas pontas das asas
+  lamina:     { x: 0.30, y: 0.24 },
+  sentinela:  { x: 0.32, y: 0.22 },
+  devastador: { x: 0.30, y: 0.30 },
+  tita:       { x: 0.34, y: 0.30 },
+};
+const CANHAO_PADRAO = { x: 0.40, y: 0.12 };
+let ladoCanhao = 1;
+let claroes = [];                       // clarões de boca de canhão e de impacto
+function bocaDoCanhao(lado) {
+  const p = G.player, sp = spriteDaNave(G.nave);
+  const c = CANHOES[G.nave] || CANHAO_PADRAO;
+  const tam = sp ? sp.tam : 30;
+  const ci = sp ? inclDaNave(G.nave) : null, ky = ci ? ci.cosInc : 1;
+  const lx = c.x * tam, ly = c.y * tam * lado;
+  const co = Math.cos(p.ang), sn = Math.sin(p.ang);
+  return { x: p.x + lx*co - ly*sn, y: p.y + (lx*sn + ly*co) * ky };
+}
+function clarao(x, y, cor, raio, dur) {
+  claroes.push({ x, y, cor, raio, dur, t: G.tempo });
+  if (claroes.length > 60) claroes.shift();
+}
+/* impacto luminoso: clarão forte + anel + faíscas da cor do tiro */
+function impactoLuminoso(x, y, cor) {
+  clarao(x, y, cor, 22, 200);
+  clarao(x, y, "#ffffff", 9, 110);
+  for (let i = 0; i < 7; i++) {
+    const a = Math.random()*6.28, v = 1 + Math.random()*2.8;
+    G.particulas.push({ x, y, vx:Math.cos(a)*v, vy:Math.sin(a)*v,
+      r: 0.8 + Math.random()*1.4, cor, vida: 160 + Math.random()*180, max: 340 });
+  }
+  choques.push({ x, y, r0: 2, r1: 20, cor, t: G.tempo, dur: 230, larg: 2.2 });
+}
+function desenharClaroes() {
+  claroes = claroes.filter(c => G.tempo - c.t < c.dur);
+  if (!claroes.length) return;
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  for (const c of claroes) {
+    const k = 1 - (G.tempo - c.t) / c.dur;
+    const r = c.raio * (0.6 + 0.4 * k);
+    const g = ctx.createRadialGradient(c.x, c.y, 0, c.x, c.y, r);
+    g.addColorStop(0, "rgba(255,255,255," + (0.9 * k) + ")");
+    g.addColorStop(0.3, corComAlfa(c.cor, 0.7 * k));
+    g.addColorStop(1, corComAlfa(c.cor, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, 6.29); ctx.fill();
+  }
+  ctx.restore();
+}
+/* "#rrggbb" → "rgba(r,g,b,a)" (com cache, é chamado muito) */
+const _corCache = {};
+function corComAlfa(hex, a) {
+  let rgb = _corCache[hex];
+  if (!rgb) {
+    const h = (hex || "#ffffff").replace("#", "");
+    const n = parseInt(h.length === 3 ? h.split("").map(c => c + c).join("") : h, 16);
+    rgb = _corCache[hex] = ((n >> 16) & 255) + "," + ((n >> 8) & 255) + "," + (n & 255);
+  }
+  return "rgba(" + rgb + "," + a + ")";
+}
+
 function atirarLaser(origem, alvo, dano, cor, doJogador, foguete, extra) {
   const a = Math.atan2(alvo.y - origem.y, alvo.x - origem.x);
   const ex = extra || {};
@@ -3683,6 +3759,7 @@ function desenhar(t) {
   for (const en of G.inimigos) desenharInimigo(en, t);
   ctx.globalCompositeOperation = "lighter";     // os tiros acendem em vez de tapar
   for (const b of G.tiros) if (!(b.espera > 0)) desenharTiro(b, t);
+  desenharClaroes();
   ctx.globalCompositeOperation = "source-over";
 
   desenharDrones(t);
@@ -3780,6 +3857,36 @@ function desenharTiro(b, t) {
     ctx.strokeStyle = "#dff4ff"; ctx.lineWidth = 1.4;
     ctx.beginPath(); ctx.arc(0, 0, 7 + Math.sin(t/120)*1.2, 0, 6.29); ctx.stroke();
     ctx.restore(); ctx.lineWidth = 1;
+    return;
+  }
+
+  const feixe = !b.foguete && b.forma !== "missil";
+  if (feixe) {
+    /* FEIXE: halo largo e macio + corpo colorido + núcleo branco, tudo somado
+       à cena ("lighter") para brilhar como luz. A rajada é mais longa e grossa. */
+    const raj = b.forma === "rajada";
+    const comp = raj ? 46 : (b.doJogador ? 30 : 22);
+    const larg = raj ? 4.2 : (b.doJogador ? 2.2 : 1.8);
+    ctx.save();
+    ctx.translate(b.x, b.y); ctx.rotate(b.ang);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.lineCap = "round";
+    let g = ctx.createLinearGradient(-comp, 0, 0, 0);
+    g.addColorStop(0, corComAlfa(b.cor, 0)); g.addColorStop(1, corComAlfa(b.cor, 0.35));
+    ctx.strokeStyle = g; ctx.lineWidth = larg * 4.5;
+    ctx.beginPath(); ctx.moveTo(-comp, 0); ctx.lineTo(0, 0); ctx.stroke();
+    g = ctx.createLinearGradient(-comp, 0, 0, 0);
+    g.addColorStop(0, corComAlfa(b.cor, 0)); g.addColorStop(0.5, corComAlfa(b.cor, 0.75)); g.addColorStop(1, corComAlfa(b.cor, 1));
+    ctx.strokeStyle = g; ctx.lineWidth = larg * 1.8;
+    ctx.beginPath(); ctx.moveTo(-comp, 0); ctx.lineTo(0, 0); ctx.stroke();
+    g = ctx.createLinearGradient(-comp * 0.7, 0, 0, 0);
+    g.addColorStop(0, "rgba(255,255,255,0)"); g.addColorStop(1, "rgba(255,255,255,.95)");
+    ctx.strokeStyle = g; ctx.lineWidth = larg * 0.7;
+    ctx.beginPath(); ctx.moveTo(-comp * 0.7, 0); ctx.lineTo(0, 0); ctx.stroke();
+    const gl = ctx.createRadialGradient(0, 0, 0, 0, 0, larg * 4);
+    gl.addColorStop(0, "rgba(255,255,255,.9)"); gl.addColorStop(0.35, corComAlfa(b.cor, 0.6)); gl.addColorStop(1, corComAlfa(b.cor, 0));
+    ctx.fillStyle = gl; ctx.beginPath(); ctx.arc(0, 0, larg * 4, 0, 6.29); ctx.fill();
+    ctx.restore();
     return;
   }
 
