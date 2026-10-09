@@ -6268,7 +6268,7 @@ function desenharStatusJogador() {
   const p = G.player, hpMax = maxHp(), shMax = maxShield();
   /* três barrinhas separadas, mesma altura e mesmo espaço entre elas:
      casco (verde), escudo (azul) e porão de carga (laranja) */
-  const w = 64, BAR_H = 4, BAR_ESP = 4, x0 = p.x - w/2, y0 = p.y - 52;
+  const w = 64, BAR_H = 4, BAR_ESP = 4, x0 = p.x - w/2, y0 = p.y - 64;
 
   /* Só aparece quando você está protegido de verdade: dentro da base ou de
      um portal E com ninguém no prazo de revide. Se você atirou em alguém,
@@ -6311,7 +6311,7 @@ function desenharStatusJogador() {
   ctx.textAlign = "center";
   ctx.font = "700 12px system-ui";
   ctx.fillStyle = G.cor;
-  ctx.fillText(G.nome, p.x, p.y + 33);
+  ctx.fillText(G.nome, p.x, p.y + 46);
 
   const sHp = Math.round(Math.max(0, p.hp)) + "/" + hpMax;
   const sSh = Math.round(Math.max(0, p.sh)) + "/" + shMax;
@@ -6322,15 +6322,15 @@ function desenharStatusJogador() {
   const wSh = ctx.measureText(sSh).width;
   let x = p.x - (wHp + wSep + wSh) / 2;
   ctx.textAlign = "left";
-  ctx.fillStyle = "#3cff82"; ctx.fillText(sHp, x, p.y + 46);
-  ctx.fillStyle = "#63e6ff"; ctx.fillText(sSh, x + wHp + wSep, p.y + 46);
+  ctx.fillStyle = "#3cff82"; ctx.fillText(sHp, x, p.y + 59);
+  ctx.fillStyle = "#63e6ff"; ctx.fillText(sSh, x + wHp + wSep, p.y + 59);
   ctx.textAlign = "center";
 
   const est = textoRegen();
   if (est) {
     ctx.font = "600 10px system-ui";
     ctx.fillStyle = "rgba(200,220,245,.75)";
-    ctx.fillText(est, p.x, p.y + 58);
+    ctx.fillText(est, p.x, p.y + 71);
   }
 }
 
