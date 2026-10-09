@@ -2109,12 +2109,12 @@ function spawnMinerio(nasceu) {
   for (let n = 0; n < 24; n++) {
     const a = Math.random() * 6.283, r = Math.sqrt(Math.random());
     x = c.x + Math.cos(a) * c.rx * r; y = c.y + Math.sin(a) * c.ry * r;
-    if (!G.minerios.some(m => Math.hypot(m.x - x, m.y - y) < 84)) break;
+    if (!G.minerios.some(m => Math.hypot(m.x - x, m.y - y) < 60)) break;
   }
   G.minerios.push({
     x, y, tipo: c.tipos[Math.floor(Math.random() * c.tipos.length)],
     v: Math.random() < 0.5 ? 0 : 1,
-    tam: 54 + Math.random() * 16,
+    tam: 32 + Math.random() * 10,
     q0: Math.random() * MIN_N,
     giro: (2.2 + Math.random() * 2.6) * (Math.random() < 0.5 ? -1 : 1),   // quadros por segundo
     fase: Math.random() * 6.283,
@@ -2187,17 +2187,18 @@ function spriteBrilho(cor) {
    um feixe liga o item à nave, o item encolhe sendo puxado para ela, um
    rastro de faíscas na cor dele vai junto e, ao chegar, um anel abre em
    volta da nave. Segue a nave mesmo com ela andando. */
-const FX_COLETA_DUR = 640;
+const FX_COLETA_DUR = 560;
+const FX_COR = "#cfe8ff";     // azul bem clarinho, quase branco: igual para tudo
 let fxColeta = [];
 function efeitoColeta(x, y, cor, obj) {
   const fa = [];
   // faíscas: estouram para fora do item e depois fazem a curva até a nave
-  for (let i = 0; i < 18; i++) {
-    const a = Math.random() * 6.283, v = 14 + Math.random() * 34;
+  for (let i = 0; i < 8; i++) {
+    const a = Math.random() * 6.283, v = 8 + Math.random() * 16;
     fa.push({ ex: Math.cos(a) * v, ey: Math.sin(a) * v, atraso: Math.random() * 0.25,
-              r: 1.6 + Math.random() * 2.2, lasca: i < 7 });
+              r: 0.9 + Math.random() * 1.1, lasca: false });
   }
-  fxColeta.push({ x, y, cor, obj: obj || null, t0: G.tempo, fa });
+  fxColeta.push({ x, y, cor: FX_COR, obj: obj || null, t0: G.tempo, fa });
 }
 
 function desenharFxColeta(t) {
@@ -2211,25 +2212,25 @@ function desenharFxColeta(t) {
     // 1) estalo no item: clarão + anel curto
     if (k < 0.35) {
       const c = k / 0.35;
-      const gb = 22 + c * 30;
-      ctx.globalAlpha = (1 - c) * 0.9;
+      const gb = 12 + c * 12;
+      ctx.globalAlpha = (1 - c) * 0.35;
       ctx.drawImage(brilho, f.x - gb, f.y - gb, gb * 2, gb * 2);
-      ctx.globalAlpha = (1 - c) * 0.8; ctx.strokeStyle = f.cor; ctx.lineWidth = 2.5 * (1 - c) + 0.6;
-      ctx.beginPath(); ctx.arc(f.x, f.y, 12 + c * 38, 0, 6.29); ctx.stroke();
+      ctx.globalAlpha = (1 - c) * 0.35; ctx.strokeStyle = f.cor; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.arc(f.x, f.y, 8 + c * 16, 0, 6.29); ctx.stroke();
     }
     // 2) o item é puxado: feixe trator até a nave, encolhendo
     const u = Math.max(0, Math.min(1, (k - 0.12) / 0.78)), e = u * u * (3 - 2 * u);
     const ix = f.x + (p.x - f.x) * e, iy = f.y + (p.y - f.y) * e;
     if (k < 0.95) {
       const dx = ix - p.x, dy = iy - p.y, d = Math.hypot(dx, dy) || 1, nx = -dy / d, ny = dx / d;
-      const larg = 13 * (1 - e) + 2.5;
+      const larg = 4 * (1 - e) + 1;
       const pul = 0.75 + 0.25 * Math.sin(t / 40);
-      ctx.globalAlpha = 0.30 * pul * (1 - e * 0.5);
+      ctx.globalAlpha = 0.14 * pul * (1 - e * 0.5);
       ctx.fillStyle = f.cor;
       ctx.beginPath();
       ctx.moveTo(p.x + nx * 3, p.y + ny * 3); ctx.lineTo(ix + nx * larg, iy + ny * larg);
       ctx.lineTo(ix - nx * larg, iy - ny * larg); ctx.lineTo(p.x - nx * 3, p.y - ny * 3); ctx.closePath(); ctx.fill();
-      ctx.globalAlpha = 0.85 * (1 - e * 0.4); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1;
+      ctx.globalAlpha = 0.35 * (1 - e * 0.4); ctx.strokeStyle = f.cor; ctx.lineWidth = 0.8;
       ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(ix, iy); ctx.stroke();
       if (f.obj && f.obj.tam) {
         ctx.globalCompositeOperation = "source-over";
@@ -2237,8 +2238,8 @@ function desenharFxColeta(t) {
         desenharMinerioSprite(f.obj, ix, iy, f.obj.tam * inch, f.obj.q0 + t / 1000 * f.obj.giro * (1 + e * 6), 1 - e * 0.6);
         ctx.globalCompositeOperation = "lighter";
       }
-      const gb = 30 * (1 - e * 0.5);
-      ctx.globalAlpha = 0.6 * (1 - e * 0.3);
+      const gb = 12 * (1 - e * 0.5);
+      ctx.globalAlpha = 0.22 * (1 - e * 0.3);
       ctx.drawImage(brilho, ix - gb, iy - gb, gb * 2, gb * 2);
     }
     // 3) faíscas e lascas: abrem para fora e depois correm para a nave
@@ -2251,12 +2252,12 @@ function desenharFxColeta(t) {
       const x = ox + (p.x - ox) * ve, y = oy + (p.y - oy) * ve;
       // rastro: aponta de onde veio
       const px0 = ox + (p.x - ox) * Math.max(0, ve - 0.12), py0 = oy + (p.y - oy) * Math.max(0, ve - 0.12);
-      ctx.globalAlpha = 0.9 * (1 - w * 0.3);
+      ctx.globalAlpha = 0.5 * (1 - w * 0.4);
       if (vem > 0) {
-        ctx.strokeStyle = f.cor; ctx.lineWidth = a.r * 0.9;
+        ctx.strokeStyle = f.cor; ctx.lineWidth = a.r * 0.7;
         ctx.beginPath(); ctx.moveTo(px0, py0); ctx.lineTo(x, y); ctx.stroke();
       }
-      ctx.fillStyle = a.lasca ? f.cor : "#ffffff";
+      ctx.fillStyle = f.cor;
       if (a.lasca) {                                  // lasca de pedra/cristal: losango girando
         const r = a.r * 1.5, g = t / 90 + a.ex;
         ctx.beginPath();
@@ -2268,12 +2269,10 @@ function desenharFxColeta(t) {
     // 4) chegou na nave: anel abrindo e clarão
     if (k > 0.8) {
       const c = Math.min(1, (k - 0.8) / 0.9);
-      ctx.globalAlpha = (1 - c) * 0.9; ctx.strokeStyle = f.cor; ctx.lineWidth = 3 * (1 - c) + 0.6;
-      ctx.beginPath(); ctx.arc(p.x, p.y, 20 + c * 46, 0, 6.29); ctx.stroke();
-      ctx.globalAlpha = (1 - c) * 0.35; ctx.lineWidth = 8 * (1 - c);
-      ctx.beginPath(); ctx.arc(p.x, p.y, 16 + c * 30, 0, 6.29); ctx.stroke();
-      ctx.globalAlpha = (1 - c) * 0.6;
-      const gb = 34 + c * 14;
+      ctx.globalAlpha = (1 - c) * 0.4; ctx.strokeStyle = f.cor; ctx.lineWidth = 1.2 * (1 - c) + 0.4;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 20 + c * 22, 0, 6.29); ctx.stroke();
+      ctx.globalAlpha = (1 - c) * 0.18;
+      const gb = 24 + c * 6;
       ctx.drawImage(brilho, p.x - gb, p.y - gb, gb * 2, gb * 2);
     }
   }
