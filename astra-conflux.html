@@ -1793,7 +1793,7 @@ function iniciarSetor(estado) {
   faiscasMotor = []; motor.impulso = 0; motor.arranque = 0;
   impactos = []; danoParticulas = []; claroes = []; faiscasImpacto = []; disparos = [];
   motesDreno = []; ondasDreno = []; fluxosDreno = [];
-  fumacas = []; estilhacos = []; bolasFogo = []; colapsos = []; clarTela = null;
+  fumacas = []; estilhacos = []; bolasFogo = []; colapsos = []; clarTela = null; nuvensFogo = [];
   tremor = { forca: 0, ate: 0 };
   G.inimigos = []; G.loot = []; G.caixas = []; G.particulas = []; G.danos = []; G.tiros = [];
   G.coleta = null; G.salto = null; G.saltoAlvo = null; G.portalPerto = null;
@@ -3464,7 +3464,7 @@ function matarInimigo(en) {
   }
   // chefe grande ganha o colapso; os demais, explosão com fragmentos
   if (ed.boss && ed.raio >= 28) morteDeChefe(en);
-  else explodir(en.x, en.y, ed.cor, ed.boss ? 30 : ed.elite ? 34 : 22, { frag: true });
+  else explodir(en.x, en.y, ed.cor, clamp((ed.raio || 16) * 1.3, ed.elite ? 34 : 22, 60), { frag: true });
   beep(120, 0.16);
 
   // créditos, XP e honra caem direto na conta
@@ -4196,14 +4196,14 @@ function desenharMissil(b) {
   // histórico curto de posições: é ele que desenha a curva do rastro
   if (!b.hist) b.hist = [];
   const h = b.hist, ult = h[h.length - 1];
-  if (!ult || Math.hypot(b.x - ult[0], b.y - ult[1]) > 3) { h.push([b.x, b.y]); if (h.length > 7) h.shift(); }
+  if (!ult || Math.hypot(b.x - ult[0], b.y - ult[1]) > 3) { h.push([b.x, b.y]); if (h.length > 4) h.shift(); }
   // fumaça: um sopro a cada ~6 unidades voadas, saindo da traseira
   const tx = b.x - co * L * 0.6, ty = b.y - sn * L * 0.6;
   if (b.fx == null) { b.fx = tx; b.fy = ty; }
   let d = Math.hypot(tx - b.fx, ty - b.fy);
   while (d > 6) {
     b.fx += (tx - b.fx) * 6 / d; b.fy += (ty - b.fy) * 6 / d; d -= 6;
-    soltarFumaca(b.fx, b.fy, 2, 8 + Math.random() * 6, 750 + Math.random() * 500, "#b4bac4", 0.5);
+    soltarFumaca(b.fx, b.fy, 2, 8 + Math.random() * 6, 600 + Math.random() * 300, "#b4bac4", 0.5);
   }
   // rastro de energia (soma luz): fita que afina para trás seguindo o histórico
   ctx.save();
@@ -4211,7 +4211,7 @@ function desenharMissil(b) {
   const pts = h.concat([[tx, ty]]);
   for (let i = 1; i < pts.length; i++) {
     const k = i / (pts.length - 1);
-    ctx.strokeStyle = corComAlfa(cor, 0.5 * k * k);
+    ctx.strokeStyle = corComAlfa(cor, 0.3 * k * k);
     ctx.lineWidth = W * (0.4 + 1.1 * k);
     ctx.beginPath(); ctx.moveTo(pts[i - 1][0], pts[i - 1][1]); ctx.lineTo(pts[i][0], pts[i][1]); ctx.stroke();
   }
@@ -4245,54 +4245,108 @@ function desenharMissil(b) {
   ctx.restore();
 }
 
-/* ---- explosões ---- */
+/* ---- explosões ----
+   Estilo "fogo de verdade": a bola de fogo é um monte de nuvens irregulares
+   que nascem branco-amareladas, passam para laranja e vermelho e viram
+   fumaça escura que sobe e some. Por cima, só um brilho leve. A cor é sempre
+   de fogo (não a cor do inimigo), e a onda de choque é discreta.
+   - acerto de míssil (sem `frag`): bola pequena, um pouco de fumaça e faíscas
+   - destruição (`frag`): bola grande, fumaça escura, estilhaços com rastro fino */
+const RAMPA_FOGO = ["#fffbe8", "#fff0b0", "#ffd36a", "#ffae3d", "#ff8a24", "#f2621a",
+                    "#c9401a", "#8a2c1c", "#4e2a24", "#3a3433", "#33312f", "#2b2a29"];
+const _nuvens = [];        // máscaras de nuvem (brancas, com borda irregular)
+const _nuvemTint = {};
+function mascaraNuvem(i) {
+  if (_nuvens[i]) return _nuvens[i];
+  const c = document.createElement("canvas"); c.width = c.height = 96;
+  const x = c.getContext("2d");
+  let sem = 1234 + i * 977; const rnd = () => (sem = (sem * 16807) % 2147483647) / 2147483647;
+  for (let k = 0; k < 26; k++) {
+    const a = rnd() * 6.28, d = rnd() * 22, r = 12 + rnd() * 18;
+    const px = 48 + Math.cos(a) * d, py = 48 + Math.sin(a) * d;
+    const g = x.createRadialGradient(px, py, 0, px, py, r);
+    g.addColorStop(0, "rgba(255,255,255,.8)"); g.addColorStop(0.6, "rgba(255,255,255,.5)"); g.addColorStop(1, "rgba(255,255,255,0)");
+    x.fillStyle = g; x.beginPath(); x.arc(px, py, r, 0, 6.29); x.fill();
+  }
+  // miolo mais cheio, borda rendada
+  const g = x.createRadialGradient(48, 48, 0, 48, 48, 30);
+  g.addColorStop(0, "rgba(255,255,255,.95)"); g.addColorStop(1, "rgba(255,255,255,0)");
+  x.fillStyle = g; x.fillRect(0, 0, 96, 96);
+  return (_nuvens[i] = c);
+}
+function nuvem(i, cor) {
+  const k = i + cor;
+  if (_nuvemTint[k]) return _nuvemTint[k];
+  const c = document.createElement("canvas"); c.width = c.height = 96;
+  const x = c.getContext("2d"); x.drawImage(mascaraNuvem(i), 0, 0);
+  x.globalCompositeOperation = "source-in"; x.fillStyle = cor; x.fillRect(0, 0, 96, 96);
+  return (_nuvemTint[k] = c);
+}
+let nuvensFogo = [];
+function puffFogo(x, y, vx, vy, t, vida, r0, r1, inicio, fim) {
+  nuvensFogo.push({ x, y, vx, vy, atr: 0.0022, t, vida, r0, r1, v: Math.floor(Math.random() * 5),
+                    rot: Math.random() * 6.28, giro: (Math.random() - 0.5) * 0.0012, c0: inicio, c1: fim });
+  if (nuvensFogo.length > 600) nuvensFogo.splice(0, nuvensFogo.length - 600);
+}
+
 function explodir(x, y, cor, tam, opc) {
   opc = opc || {};
-  const s = tam / 22, T = G.tempo + (opc.atraso || 0);   // 1 = abate de inimigo comum
-  cor = cor || "#ffb347";
-  // clarão rápido que ilumina a região
-  bolasFogo.push({ tipo: "clarao", x, y, t: T, dur: 90 + 70 * Math.min(s, 2), r: tam * 3.4 });
-  // bola de fogo principal + bolhas menores em volta (a borda fica irregular)
-  bolasFogo.push({ tipo: "fogo", x, y, t: T, dur: 420 + 260 * Math.min(s, 2.5), r: tam * 1.25, cor });
-  const nb = Math.round(3 + 3 * Math.min(s, 2));
-  for (let i = 0; i < nb; i++) {
-    const a = Math.random() * 6.28, d = tam * (0.25 + Math.random() * 0.55);
-    bolasFogo.push({ tipo: "fogo", x: x + Math.cos(a) * d, y: y + Math.sin(a) * d, t: T + Math.random() * 110 * s,
-                     dur: 320 + Math.random() * 260 * s, r: tam * (0.45 + Math.random() * 0.4), cor });
-  }
-  // ondas de choque: uma rápida e clara, outra larga na cor
-  if (!opc.semAnel) bolasFogo.push({ tipo: "anel", x, y, t: T, dur: 300 + 80 * s, r0: tam * 0.4, r1: tam * 2.6, larg: 2.5 + s, cor: "#fff1d6" });
-  if (!opc.semAnel) bolasFogo.push({ tipo: "anel", x, y, t: T + 30, dur: 520 + 200 * Math.min(s, 2), r0: tam * 0.6, r1: tam * 4, larg: 3 + 2 * Math.min(s, 2), cor });
-  // faíscas riscadas
-  const nf = Math.round(10 + 14 * s);
+  const s = tam / 22, T = G.tempo + (opc.atraso || 0);
+  const destroi = !!opc.frag;
+  const sv = Math.sqrt(Math.min(s, 3));
+  // clarão curto e pequeno
+  bolasFogo.push({ tipo: "clarao", x, y, t: T, dur: destroi ? 120 : 80, r: tam * (destroi ? 2 : 1.4), forca: destroi ? 0.7 : 0.5 });
+  // bola de fogo: nuvens que crescem, esfriam e viram fumaça
+  const nf = destroi ? Math.min(22, Math.round(7 + 6 * s)) : 4;
   for (let i = 0; i < nf; i++) {
-    const a = Math.random() * 6.28, v = (0.18 + Math.random() * 0.5) * Math.sqrt(s);
-    estilhacos.push({ tipo: "faisca", x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, atr: 0.0035, t: T,
-                      vida: 260 + Math.random() * 420, cor: i % 3 === 0 ? "#ffffff" : i % 3 === 1 ? "#ffd59a" : cor });
+    const a = Math.random() * 6.28, d = Math.random() * tam * (destroi ? 0.55 : 0.2);
+    const v = (destroi ? 0.012 + Math.random() * 0.035 : 0.006 + Math.random() * 0.015) * sv;
+    puffFogo(x + Math.cos(a) * d, y + Math.sin(a) * d, Math.cos(a) * v, Math.sin(a) * v,
+             T + Math.random() * (destroi ? 140 : 50),
+             destroi ? (750 + Math.random() * 500) * Math.min(1.5, 0.8 + s * 0.25) : 380 + Math.random() * 180,
+             tam * (destroi ? 0.45 : 0.3), tam * (destroi ? 0.95 + Math.random() * 0.45 : 0.55 + Math.random() * 0.2),
+             Math.random() * 1.5, destroi ? 6.6 + Math.random() * 1.6 : 7);   // cada nuvem num tom: a bola ganha textura
   }
-  // fragmentos do casco (só quando algo foi destruído)
-  if (opc.frag) {
-    const nfr = Math.round(5 + 7 * s);
+  // fumaça escura que sobra (nasce depois e dura mais)
+  const nfu = destroi ? Math.min(16, Math.round(5 + 4 * s)) : 2;
+  for (let i = 0; i < nfu; i++) {
+    const a = Math.random() * 6.28, d = Math.random() * tam * 0.45, v = (0.008 + Math.random() * 0.016) * sv;
+    puffFogo(x + Math.cos(a) * d, y + Math.sin(a) * d, Math.cos(a) * v, Math.sin(a) * v - 0.004,
+             T + (destroi ? 180 + Math.random() * 260 : 120 + Math.random() * 80),
+             destroi ? 1500 + Math.random() * 900 : 700 + Math.random() * 300,
+             tam * 0.5, tam * (destroi ? 1.3 + Math.random() * 0.6 : 0.6), 8, 11);
+  }
+  // faíscas curtas
+  const nfa = destroi ? Math.round(8 + 6 * s) : 5;
+  for (let i = 0; i < nfa; i++) {
+    const a = Math.random() * 6.28, v = (0.15 + Math.random() * 0.3) * sv;
+    estilhacos.push({ tipo: "faisca", x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, atr: 0.005, t: T,
+                      vida: 220 + Math.random() * 300, cor: i % 2 ? "#ffd59a" : "#ffb060" });
+  }
+  if (destroi) {
+    // onda de choque discreta
+    if (!opc.semAnel) bolasFogo.push({ tipo: "anel", x, y, t: T + 20, dur: 450 + 120 * Math.min(s, 2), r0: tam * 0.5, r1: tam * 2.4, larg: 1.6, cor: "#ffd9a8", forca: 0.35 });
+    // estilhaços: pedaços que voam longe deixando um rastro fino
+    const ne = Math.round(3 + 2 * Math.min(s, 2));
+    for (let i = 0; i < ne; i++) {
+      const a = Math.random() * 6.28, v = (0.18 + Math.random() * 0.22) * sv;
+      estilhacos.push({ tipo: "risco", x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, atr: 0.0012, t: T + Math.random() * 60,
+                        vida: 700 + Math.random() * 500 });
+    }
+    // pedacinhos de casco em brasa
+    const nfr = Math.round(3 + 3 * Math.min(s, 2));
     for (let i = 0; i < nfr; i++) {
-      const a = Math.random() * 6.28, v = (0.07 + Math.random() * 0.2) * Math.sqrt(s);
-      const lados = 3 + (Math.random() < 0.5 ? 1 : 0), tm = (1.8 + Math.random() * 3) * Math.min(1.6, 0.8 + s * 0.3);
+      const a = Math.random() * 6.28, v = (0.05 + Math.random() * 0.12) * sv;
+      const lados = 3 + (Math.random() < 0.5 ? 1 : 0), tm = 1.6 + Math.random() * 2.2;
       const forma = []; for (let k = 0; k < lados; k++) forma.push([(k / lados) * 6.28 + Math.random() * 0.6, tm * (0.6 + Math.random() * 0.6)]);
       estilhacos.push({ tipo: "frag", x, y, vx: Math.cos(a) * v, vy: Math.sin(a) * v, atr: 0.0016, t: T,
-                        vida: 900 + Math.random() * 800, forma, giro: (Math.random() - 0.5) * 0.012, rot0: Math.random() * 6.28,
-                        prox: T + 40 });
+                        vida: 900 + Math.random() * 700, forma, giro: (Math.random() - 0.5) * 0.012, rot0: Math.random() * 6.28, prox: T + 40 });
     }
-  }
-  // fumaça que fica depois
-  const nfu = Math.round(4 + 5 * s);
-  for (let i = 0; i < nfu; i++) {
-    const a = Math.random() * 6.28, d = Math.random() * tam * 0.6;
-    soltarFumaca(x + Math.cos(a) * d, y + Math.sin(a) * d, tam * 0.4, tam * (1.1 + Math.random() * 0.7),
-                 1300 + Math.random() * 1000, "#767c86", 0.55, Math.cos(a) * 0.02, Math.sin(a) * 0.02, T + 80);
   }
   if (estilhacos.length > 700) estilhacos.splice(0, estilhacos.length - 700);
   if (G.player && !opc.semTremor) {
     const d = dist(x, y, G.player.x, G.player.y);
-    if (d < 900) sacudir((tam >= 20 ? 9 : 4) * (1 - d / 900));
+    if (d < 900) sacudir((destroi ? (tam >= 30 ? 7 : 4) : 1.5) * (1 - d / 900));
   }
 }
 
@@ -4313,13 +4367,12 @@ function atualizarColapsos() {
       // explosão final
       const tam = Math.max(46, c.r * 1.4);
       explodir(c.x, c.y, c.cor, tam, { frag: true, semTremor: true });
-      explodir(c.x, c.y, "#ffffff", tam * 0.6, { semTremor: true, semAnel: true });
-      bolasFogo.push({ tipo: "anel", x: c.x, y: c.y, t: T + 140, dur: 1100, r0: tam, r1: tam * 9, larg: 10, cor: c.cor });
+      bolasFogo.push({ tipo: "anel", x: c.x, y: c.y, t: T + 60, dur: 900, r0: tam * 0.6, r1: tam * 4.5, larg: 2.4, cor: "#ffd9a8", forca: 0.4 });
       for (let j = 0; j < 5; j++) {
         const a = Math.random() * 6.28, d = tam * (0.6 + Math.random() * 0.9);
-        explodir(c.x + Math.cos(a) * d, c.y + Math.sin(a) * d, c.cor, tam * 0.45, { frag: true, semTremor: true, semAnel: true, atraso: 60 + j * 70 });
+        explodir(c.x + Math.cos(a) * d, c.y + Math.sin(a) * d, c.cor, tam * 0.5, { frag: true, semTremor: true, semAnel: true, atraso: 80 + j * 110 });
       }
-      clarTela = { t: T, dur: 380 };
+      clarTela = { t: T, dur: 300 };
       tremor.forca = 16; tremor.ate = T + 900;
       colapsos.splice(i, 1);
       continue;
@@ -4327,7 +4380,7 @@ function atualizarColapsos() {
     // explosões menores pelo casco, cada vez mais seguidas
     if (T >= c.prox) {
       const a = Math.random() * 6.28, d = Math.random() * c.r * 0.9;
-      explodir(c.x + Math.cos(a) * d, c.y + Math.sin(a) * d, c.cor, 10 + Math.random() * 8 + k * 8, { frag: Math.random() < 0.5, semTremor: true });
+      explodir(c.x + Math.cos(a) * d, c.y + Math.sin(a) * d, c.cor, 12 + Math.random() * 8 + k * 8, { semTremor: true });
       sacudir(3 + k * 5);
       c.prox = T + (230 - 160 * k) * (0.7 + Math.random() * 0.6);
     }
@@ -4356,13 +4409,13 @@ function desenharColapsos(t) {
     ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
     for (const a0 of c.raios) {
       const a = a0 + k * 0.6, len = c.r * (0.4 + k * 1.6);
-      ctx.strokeStyle = corComAlfa(c.cor, 0.25 * k); ctx.lineWidth = 3 + 4 * k;
+      ctx.strokeStyle = corComAlfa("#ff9a40", 0.14 * k); ctx.lineWidth = 2 + 3 * k;
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * len, y + Math.sin(a) * len); ctx.stroke();
       ctx.strokeStyle = "rgba(255,250,235," + (0.75 * k) + ")"; ctx.lineWidth = 1 + 1.2 * k;
       ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.cos(a) * len * 0.8, y + Math.sin(a) * len * 0.8); ctx.stroke();
     }
     const nr = c.r * (0.3 + k * 1.2), g = ctx.createRadialGradient(x, y, 0, x, y, nr);
-    g.addColorStop(0, "rgba(255,255,255," + (0.3 + 0.7 * k) + ")"); g.addColorStop(0.4, corComAlfa(c.cor, 0.5 * k)); g.addColorStop(1, corComAlfa(c.cor, 0));
+    g.addColorStop(0, "rgba(255,255,255," + (0.3 + 0.7 * k) + ")"); g.addColorStop(0.4, corComAlfa("#ff9a40", 0.5 * k)); g.addColorStop(1, corComAlfa("#ff9a40", 0));
     ctx.fillStyle = g; ctx.beginPath(); ctx.arc(x, y, nr, 0, 6.29); ctx.fill();
     ctx.restore();
   }
@@ -4373,7 +4426,7 @@ function desenharExplosoes(t) {
   const T = G.tempo;
   atualizarColapsos();
   if (colapsos.length) desenharColapsos(t);
-  if (!fumacas.length && !estilhacos.length && !bolasFogo.length && !clarTela) return;
+  if (!fumacas.length && !estilhacos.length && !bolasFogo.length && !clarTela && !nuvensFogo.length) return;
   ctx.save();
   // 1. fumaça (tapa a luz, não soma)
   ctx.globalCompositeOperation = "source-over";
@@ -4386,6 +4439,30 @@ function desenharExplosoes(t) {
     ctx.drawImage(sp, f.x + f.vx * s - r, f.y + f.vy * s - r, r * 2, r * 2);
   }
   fumacas = fumacas.filter(f => T - f.t < f.vida);
+  ctx.globalAlpha = 1;
+  // 1b. bola de fogo e fumaça escura (nuvens que esfriam)
+  const ordem = nuvensFogo.filter(n => n.c0 >= 8).concat(nuvensFogo.filter(n => n.c0 < 8));
+  for (const n of ordem) {
+    const s = T - n.t, k = s / n.vida;
+    if (k < 0 || k >= 1) continue;
+    const [x, y] = posFreio(n, s), r = n.r0 + (n.r1 - n.r0) * (1 - (1 - k) * (1 - k));
+    const ci = n.c0 + (n.c1 - n.c0) * Math.pow(k, 0.8), i0 = Math.floor(ci), f = ci - i0;
+    const fumaca = n.c0 >= 8;
+    let a = Math.min(1, s / 60) * (fumaca ? 0.9 * Math.min(1, (1 - k) * 1.6) : (k < 0.6 ? 1 : 1 - (k - 0.6) / 0.4));
+    ctx.save(); ctx.translate(x, y); ctx.rotate(n.rot + n.giro * s);
+    ctx.globalAlpha = a * (1 - f);
+    ctx.drawImage(nuvem(n.v, RAMPA_FOGO[i0]), -r, -r, r * 2, r * 2);
+    if (f > 0.02 && i0 + 1 < RAMPA_FOGO.length) { ctx.globalAlpha = a * f; ctx.drawImage(nuvem(n.v, RAMPA_FOGO[i0 + 1]), -r, -r, r * 2, r * 2); }
+    // brilho por dentro enquanto ainda é fogo
+    if (!fumaca && k < 0.55) {
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = 0.45 * (1 - k / 0.55);
+      ctx.drawImage(nuvem(n.v, "#ffb84a"), -r * 0.7, -r * 0.7, r * 1.4, r * 1.4);
+      ctx.globalCompositeOperation = "source-over";
+    }
+    ctx.restore();
+  }
+  nuvensFogo = nuvensFogo.filter(n => T - n.t < n.vida);
   ctx.globalAlpha = 1;
   // 2. fragmentos de casco: metal escuro com a borda em brasa, girando e soltando fumaça
   for (const e of estilhacos) {
@@ -4411,7 +4488,7 @@ function desenharExplosoes(t) {
     const s = T - b.t, k = s / b.dur;
     if (k < 0 || k >= 1) continue;
     if (b.tipo === "clarao") {
-      const a = (1 - k) * (1 - k);
+      const a = (1 - k) * (1 - k) * (b.forca || 1);
       const g = ctx.createRadialGradient(b.x, b.y, 0, b.x, b.y, b.r);
       g.addColorStop(0, "rgba(255,255,255," + 0.95 * a + ")"); g.addColorStop(0.25, "rgba(255,236,200," + 0.45 * a + ")"); g.addColorStop(1, "rgba(255,220,170,0)");
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, 6.29); ctx.fill();
@@ -4426,13 +4503,25 @@ function desenharExplosoes(t) {
       ctx.fillStyle = g; ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.29); ctx.fill();
     } else if (b.tipo === "anel") {
       const e = 1 - (1 - k) * (1 - k), r = b.r0 + (b.r1 - b.r0) * e;
-      ctx.strokeStyle = corComAlfa(b.cor, 0.18 * (1 - k)); ctx.lineWidth = b.larg * 3 * (1 - k) + 1;
+      const fo = b.forca || 1;
+      ctx.strokeStyle = corComAlfa(b.cor, 0.18 * fo * (1 - k)); ctx.lineWidth = b.larg * 3 * (1 - k) + 1;
       ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.29); ctx.stroke();
-      ctx.strokeStyle = corComAlfa(b.cor, 0.8 * (1 - k)); ctx.lineWidth = b.larg * (1 - k) + 0.6;
+      ctx.strokeStyle = corComAlfa(b.cor, 0.8 * fo * (1 - k)); ctx.lineWidth = b.larg * (1 - k) + 0.6;
       ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, 6.29); ctx.stroke();
     }
   }
   bolasFogo = bolasFogo.filter(b => T - b.t < b.dur);
+  for (const e of estilhacos) {
+    if (e.tipo !== "risco") continue;
+    const s = T - e.t, k = s / e.vida;
+    if (k < 0 || k >= 1) continue;
+    const [x, y] = posFreio(e, s), [x2, y2] = posFreio(e, Math.max(0, s - 260));
+    const g = ctx.createLinearGradient(x2, y2, x, y);
+    g.addColorStop(0, "rgba(255,190,120,0)"); g.addColorStop(1, "rgba(255,220,170," + 0.8 * (1 - k) + ")");
+    ctx.strokeStyle = g; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x, y); ctx.stroke();
+    ctx.fillStyle = "rgba(255,236,200," + (1 - k) + ")"; ctx.fillRect(x - 0.9, y - 0.9, 1.8, 1.8);
+  }
   for (const e of estilhacos) {
     if (e.tipo !== "faisca") continue;
     const s = T - e.t, k = s / e.vida;
@@ -4448,7 +4537,7 @@ function desenharExplosoes(t) {
     if (k >= 1) clarTela = null;
     else {
       ctx.globalCompositeOperation = "source-over";
-      ctx.fillStyle = "rgba(255,246,228," + 0.42 * (1 - k) * (1 - k) + ")";
+      ctx.fillStyle = "rgba(255,236,205," + 0.1 * (1 - k) * (1 - k) + ")";
       ctx.fillRect(G.cam.x - 200, G.cam.y - 200, VW + 400, VH + 400);
     }
   }
