@@ -1204,6 +1204,9 @@ function pontoDeColeta(o) {
 /* Manda recolher o mais próximo — é o que o botão da mãozinha aciona. */
 function coletarPerto() {
   if (!running || G.morto) return;
+  // já tem uma coleta em andamento: apertar de novo não troca nem reinicia,
+  // ela termina normal e o próximo aperto pega o seguinte
+  if (G.coleta) return;
   const p = G.player;
   let alvo = null, tipo = null, dmin = Infinity;
   for (const l of G.loot)   { const d = dist(p.x,p.y,l.x,l.y);   if (d < dmin) { dmin=d; alvo=l;  tipo="loot";  } }
@@ -2784,6 +2787,8 @@ cv.addEventListener("pointerdown", e => {
   if (!aColetar) for (const m of (G.minerios || []))
     if (minerioPronto(m) && dist(px, py, m.x, m.y) < m.tam * 0.5 + 8) { aColetar = m; tipoColeta = "minerio"; break; }
   if (aColetar) {
+    // clicar de novo durante uma coleta não cancela nem reinicia: ela termina
+    if (G.coleta) return;
     G.coleta = { obj: aColetar, tipo: tipoColeta, t0: null };
     const q = pontoDeColeta(aColetar);
     G.player.dx = q.x; G.player.dy = q.y;
