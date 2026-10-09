@@ -834,7 +834,15 @@ const RES = {
   titanio:{ nome:"Titânio", curto:"Ti", cor:"#c9d6e4", preco:140 },
   plasma: { nome:"Plasma",  curto:"Pl", cor:"#ff9d4d", preco:460 },
   cristal:{ nome:"Cristal de Vórtice", curto:"Cr", cor:"#8affd8", preco:1700 },
+  /* Minérios de mapa: saem dos asteroides de coleta, 1 por asteroide.
+     Preços provisórios, até a regra definitiva. */
+  ferrita: { nome:"Ferrita",         curto:"Fe", cor:"#e07a3e", preco:60,  mapa:true },
+  cobalto: { nome:"Cobalto Estelar", curto:"Co", cor:"#4f93ff", preco:120, mapa:true },
+  iridion: { nome:"Iridion",         curto:"Ir", cor:"#ffc23a", preco:250, mapa:true },
+  nebulita:{ nome:"Nebulita",        curto:"Nb", cor:"#c868ff", preco:500, mapa:true },
 };
+/* os que caem de monstros e de caixas (os de mapa só saem dos asteroides) */
+const RES_DROP = ["titanio","plasma","cristal"];
 
 const ENEMIES = {
   /* Passivo: não abre fogo por conta própria, só revida quem atirar nele. */
@@ -878,6 +886,19 @@ const SECTORS = [
 ];
 /* rótulo do setor, para não escrever G.setor+1 espalhado pelo código */
 const rotSetor = i => (SECTORS[i] && SECTORS[i].rot) || String(i + 1);
+
+/* Campos de mineração dos mapas 1 a 4: uma região de cada mapa cheia de
+   asteroides com veios de minério. Cada asteroide dá 1 unidade; recolhido
+   um, nasce outro num ponto qualquer da mesma região. `tipos` sorteia
+   igual entre os da lista. Longe da base (860,660) e dos portais (y 2000). */
+const CAMPO_MINERIO = [
+  { x:3500, y:2950, rx:820, ry:430, n:38, tipos:["ferrita"] },
+  { x:2800, y:850,  rx:850, ry:420, n:38, tipos:["ferrita","cobalto"] },
+  { x:2900, y:3000, rx:850, ry:420, n:38, tipos:["iridion","cobalto"] },
+  { x:2800, y:850,  rx:850, ry:420, n:38, tipos:["nebulita","cobalto"] },
+];
+const campoMinerio = () => CAMPO_MINERIO[G.setor] || null;
+const MIN_RENASCE = 1400;     // o novo aparece (sumindo do nada) depois disso, em ms
 
 const UPGRADES = [
   { id:"laser",  nome:"Calibragem de Canhão", desc:"+12% de dano por nível",             base:9000, max:8 },
@@ -1175,8 +1196,9 @@ const ALCANCE_MAO = 900;
 
 /* Ponto onde a nave para para recolher: centralizada no item, um pouco acima. */
 function pontoDeColeta(o) {
+  const a = o.tam ? Math.max(AFASTA_COLETA, o.tam * 0.5 + 26) : AFASTA_COLETA;
   return { x: clamp(o.x, 20, WORLD.w - 20),
-           y: clamp(o.y - AFASTA_COLETA, 20, WORLD.h - 20) };
+           y: clamp(o.y - a, 20, WORLD.h - 20) };
 }
 
 /* Manda recolher o mais próximo — é o que o botão da mãozinha aciona. */
@@ -1186,6 +1208,8 @@ function coletarPerto() {
   let alvo = null, tipo = null, dmin = Infinity;
   for (const l of G.loot)   { const d = dist(p.x,p.y,l.x,l.y);   if (d < dmin) { dmin=d; alvo=l;  tipo="loot";  } }
   for (const c of G.caixas) { const d = dist(p.x,p.y,c.x,c.y);   if (d < dmin) { dmin=d; alvo=c;  tipo="caixa"; } }
+  for (const m of (G.minerios || [])) { if (!minerioPronto(m)) continue;
+    const d = dist(p.x,p.y,m.x,m.y); if (d < dmin) { dmin=d; alvo=m; tipo="minerio"; } }
   if (!alvo || dmin > ALCANCE_MAO) { toast("Nada por perto para recolher"); return; }
   G.coleta = { obj: alvo, tipo, t0: null };
   const q = pontoDeColeta(alvo);
@@ -1238,7 +1262,7 @@ function novoJogo(nome, factionId) {
     skylab: { titanio:1, plasma:0, cristal:0, estoque:{ titanio:0, plasma:0, cristal:0 } },
     hab: { reparo:0, sobrecarga:0, camuflagem:0 },
     buff: { sobrecarga:0, camuflagem:0 },
-    carga: { titanio:0, plasma:0, cristal:0 },
+    carga: Object.fromEntries(Object.keys(RES).map(k => [k, 0])),
     setor: 0, clan: null, clanXp: 0,
     missoes: [], oferta: [], missaoSeq: 1,
     stats: { abates:0, pilotos:0, caixas:0, mortes:0, ganho:0, missoes:0 },
@@ -1699,7 +1723,7 @@ const dmgTotal = () => dmgBase() * ammoMult();
 const speedTotal = () => (shipData().speed + somaEquip("motor")) * G.mod.speed * (1 + 0.06 * G.up.motor);
 const cargoMax   = () => Math.round(shipData().cargo * (1 + 0.15 * G.up.coletor));
 const pickRange  = () => 130 * (1 + 0.15 * G.up.coletor);
-const cargaUsada = () => G.carga.titanio + G.carga.plasma + G.carga.cristal;
+const cargaUsada = () => Object.keys(RES).reduce((a, k) => a + (G.carga[k] || 0), 0);
 const xpNecessario = n => Math.floor(400 * Math.pow(n, 1.7));
 const clanNivel  = () => G.clan ? Math.min(10, 1 + Math.floor(G.clanXp / 50000)) : 0;
 const clanBonus  = () => G.clan ? 1 + 0.04 * clanNivel() : 1;
@@ -1807,6 +1831,9 @@ function iniciarSetor(estado) {
   }
   for (let i = 0; i < s.pvp; i++) spawnPiloto();
   for (let i = 0; i < 5; i++) spawnCaixa();
+  G.minerios = []; fxColeta = [];
+  const cm = campoMinerio();
+  if (cm) for (let i = 0; i < cm.n; i++) spawnMinerio(G.tempo - 9999);
   gerarEstrelas();
 }
 
@@ -2053,6 +2080,206 @@ const imgAsteroide = Array.from({ length: 4 }, (_, i) => {
   return slot;
 });
 const AST_F = 80, AST_N = 48, AST_COLS = 8;
+
+/* ===================== ASTEROIDES DE MINÉRIO =====================
+   Rocha 3D com veios acesos e cristais na cor do minério, 32 quadros de
+   rotação (8×4) por folha, duas formas por minério. */
+const MIN_F = 104, MIN_N = 32, MIN_COLS = 8;
+const imgMinerio = {};
+for (const k of ["ferrita","cobalto","iridion","nebulita"]) imgMinerio[k] = [0, 1].map(v => {
+  const im = new Image();
+  const slot = { complete: false, img: null };
+  im.onload = () => {
+    const c = document.createElement("canvas"); c.width = im.naturalWidth; c.height = im.naturalHeight;
+    c.getContext("2d").drawImage(im, 0, 0);
+    slot.img = c; slot.complete = true;
+  };
+  im.src = "minerio-" + k + "-" + v + ".webp";
+  return slot;
+});
+
+const minerioPronto = m => G.tempo >= m.nasceu;
+
+/* Novo asteroide num ponto livre da região. `nasceu` no futuro = ele só
+   aparece (e só dá para clicar) a partir dali. */
+function spawnMinerio(nasceu) {
+  const c = campoMinerio();
+  if (!c) return;
+  let x = c.x, y = c.y;
+  for (let n = 0; n < 24; n++) {
+    const a = Math.random() * 6.283, r = Math.sqrt(Math.random());
+    x = c.x + Math.cos(a) * c.rx * r; y = c.y + Math.sin(a) * c.ry * r;
+    if (!G.minerios.some(m => Math.hypot(m.x - x, m.y - y) < 84)) break;
+  }
+  G.minerios.push({
+    x, y, tipo: c.tipos[Math.floor(Math.random() * c.tipos.length)],
+    v: Math.random() < 0.5 ? 0 : 1,
+    tam: 54 + Math.random() * 16,
+    q0: Math.random() * MIN_N,
+    giro: (2.2 + Math.random() * 2.6) * (Math.random() < 0.5 ? -1 : 1),   // quadros por segundo
+    fase: Math.random() * 6.283,
+    nasceu,
+  });
+}
+
+function desenharMinerioSprite(m, x, y, tam, quadro, alfa) {
+  const sl = imgMinerio[m.tipo] && imgMinerio[m.tipo][m.v];
+  if (!sl || !sl.complete) {                       // folha ainda carregando: uma pedra simples
+    ctx.globalAlpha = alfa; ctx.fillStyle = "#4a4440";
+    ctx.beginPath(); ctx.arc(x, y, tam * 0.36, 0, 6.29); ctx.fill();
+    ctx.fillStyle = RES[m.tipo].cor; ctx.globalAlpha = alfa * 0.7;
+    ctx.beginPath(); ctx.arc(x + tam*0.1, y - tam*0.08, tam * 0.08, 0, 6.29); ctx.fill();
+    return;
+  }
+  const q0 = Math.floor(quadro), f = quadro - q0;
+  const q = ((q0 % MIN_N) + MIN_N) % MIN_N, q1 = (q + 1) % MIN_N;
+  ctx.globalAlpha = alfa;
+  ctx.drawImage(sl.img, (q % MIN_COLS) * MIN_F, ((q / MIN_COLS) | 0) * MIN_F, MIN_F, MIN_F, x - tam/2, y - tam/2, tam, tam);
+  if (f > 0.05) {
+    ctx.globalAlpha = alfa * f;
+    ctx.drawImage(sl.img, (q1 % MIN_COLS) * MIN_F, ((q1 / MIN_COLS) | 0) * MIN_F, MIN_F, MIN_F, x - tam/2, y - tam/2, tam, tam);
+  }
+}
+
+function desenharMinerios(t) {
+  const L = G.cam.x - 80, R = G.cam.x + VW + 80, T0 = G.cam.y - 80, B = G.cam.y + VH + 80;
+  for (const m of (G.minerios || [])) {
+    if (m.x < L || m.x > R || m.y < T0 || m.y > B) continue;
+    const idade = G.tempo - m.nasceu;
+    if (idade < 0) continue;
+    if (fxColeta.some(f => f.obj === m)) continue;          // está sendo puxado para a nave
+    const surge = Math.min(1, idade / 700);
+    const fl = Math.sin(t / 900 + m.fase) * 2.5;            // boia de leve
+    const tam = m.tam * (0.6 + 0.4 * surge);
+    // brilho fraco do minério em volta: é o que diz "dá para coletar"
+    const pulso = 0.5 + 0.5 * Math.sin(t / 520 + m.fase);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.globalAlpha = (0.10 + 0.08 * pulso) * surge;
+    const gb = tam * 1.25;
+    ctx.drawImage(spriteBrilho(RES[m.tipo].cor), m.x - gb, m.y + fl - gb, gb * 2, gb * 2);
+    ctx.globalCompositeOperation = "source-over";
+    desenharMinerioSprite(m, m.x, m.y + fl, tam, m.q0 + t / 1000 * m.giro, surge);
+    if (surge < 1) {                                          // chegando: um anel acende e some
+      ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = (1 - surge) * 0.7; ctx.strokeStyle = RES[m.tipo].cor; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(m.x, m.y + fl, tam * (0.3 + surge * 0.5), 0, 6.29); ctx.stroke();
+      ctx.globalCompositeOperation = "source-over"; ctx.lineWidth = 1;
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+/* bolinha de luz radial por cor, feita uma vez */
+const _brilhos = new Map();
+function spriteBrilho(cor) {
+  let c = _brilhos.get(cor);
+  if (c) return c;
+  c = document.createElement("canvas"); c.width = c.height = 64;
+  const g = c.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  gr.addColorStop(0, cor); gr.addColorStop(0.35, corComAlfa(cor, 0.45)); gr.addColorStop(1, corComAlfa(cor, 0));
+  g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+  _brilhos.set(cor, c);
+  return c;
+}
+
+/* ===================== EFEITO DE COLETA (padrão) =====================
+   Vale para tudo que se recolhe no mapa — carga, caixa e asteroide:
+   um feixe liga o item à nave, o item encolhe sendo puxado para ela, um
+   rastro de faíscas na cor dele vai junto e, ao chegar, um anel abre em
+   volta da nave. Segue a nave mesmo com ela andando. */
+const FX_COLETA_DUR = 640;
+let fxColeta = [];
+function efeitoColeta(x, y, cor, obj) {
+  const fa = [];
+  // faíscas: estouram para fora do item e depois fazem a curva até a nave
+  for (let i = 0; i < 18; i++) {
+    const a = Math.random() * 6.283, v = 14 + Math.random() * 34;
+    fa.push({ ex: Math.cos(a) * v, ey: Math.sin(a) * v, atraso: Math.random() * 0.25,
+              r: 1.6 + Math.random() * 2.2, lasca: i < 7 });
+  }
+  fxColeta.push({ x, y, cor, obj: obj || null, t0: G.tempo, fa });
+}
+
+function desenharFxColeta(t) {
+  if (!fxColeta.length) return;
+  const p = G.player;
+  ctx.globalCompositeOperation = "lighter";
+  for (let i = fxColeta.length - 1; i >= 0; i--) {
+    const f = fxColeta[i], k = (G.tempo - f.t0) / FX_COLETA_DUR;
+    if (k >= 1.7) { fxColeta.splice(i, 1); continue; }
+    const brilho = spriteBrilho(f.cor);
+    // 1) estalo no item: clarão + anel curto
+    if (k < 0.35) {
+      const c = k / 0.35;
+      const gb = 22 + c * 30;
+      ctx.globalAlpha = (1 - c) * 0.9;
+      ctx.drawImage(brilho, f.x - gb, f.y - gb, gb * 2, gb * 2);
+      ctx.globalAlpha = (1 - c) * 0.8; ctx.strokeStyle = f.cor; ctx.lineWidth = 2.5 * (1 - c) + 0.6;
+      ctx.beginPath(); ctx.arc(f.x, f.y, 12 + c * 38, 0, 6.29); ctx.stroke();
+    }
+    // 2) o item é puxado: feixe trator até a nave, encolhendo
+    const u = Math.max(0, Math.min(1, (k - 0.12) / 0.78)), e = u * u * (3 - 2 * u);
+    const ix = f.x + (p.x - f.x) * e, iy = f.y + (p.y - f.y) * e;
+    if (k < 0.95) {
+      const dx = ix - p.x, dy = iy - p.y, d = Math.hypot(dx, dy) || 1, nx = -dy / d, ny = dx / d;
+      const larg = 13 * (1 - e) + 2.5;
+      const pul = 0.75 + 0.25 * Math.sin(t / 40);
+      ctx.globalAlpha = 0.30 * pul * (1 - e * 0.5);
+      ctx.fillStyle = f.cor;
+      ctx.beginPath();
+      ctx.moveTo(p.x + nx * 3, p.y + ny * 3); ctx.lineTo(ix + nx * larg, iy + ny * larg);
+      ctx.lineTo(ix - nx * larg, iy - ny * larg); ctx.lineTo(p.x - nx * 3, p.y - ny * 3); ctx.closePath(); ctx.fill();
+      ctx.globalAlpha = 0.85 * (1 - e * 0.4); ctx.strokeStyle = "#ffffff"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(ix, iy); ctx.stroke();
+      if (f.obj && f.obj.tam) {
+        ctx.globalCompositeOperation = "source-over";
+        const inch = k < 0.12 ? 1 + k / 0.12 * 0.12 : 1.12 * (1 - e * 0.9);   // incha um pouco e encolhe
+        desenharMinerioSprite(f.obj, ix, iy, f.obj.tam * inch, f.obj.q0 + t / 1000 * f.obj.giro * (1 + e * 6), 1 - e * 0.6);
+        ctx.globalCompositeOperation = "lighter";
+      }
+      const gb = 30 * (1 - e * 0.5);
+      ctx.globalAlpha = 0.6 * (1 - e * 0.3);
+      ctx.drawImage(brilho, ix - gb, iy - gb, gb * 2, gb * 2);
+    }
+    // 3) faíscas e lascas: abrem para fora e depois correm para a nave
+    for (const a of f.fa) {
+      const w = (k - a.atraso) / 0.95;
+      if (w <= 0 || w >= 1) continue;
+      const sai = Math.min(1, w / 0.3), so = 1 - (1 - sai) * (1 - sai);       // abertura rápida
+      const vem = Math.max(0, (w - 0.25) / 0.75), ve = vem * vem;             // volta acelerando
+      const ox = f.x + a.ex * so, oy = f.y + a.ey * so;
+      const x = ox + (p.x - ox) * ve, y = oy + (p.y - oy) * ve;
+      // rastro: aponta de onde veio
+      const px0 = ox + (p.x - ox) * Math.max(0, ve - 0.12), py0 = oy + (p.y - oy) * Math.max(0, ve - 0.12);
+      ctx.globalAlpha = 0.9 * (1 - w * 0.3);
+      if (vem > 0) {
+        ctx.strokeStyle = f.cor; ctx.lineWidth = a.r * 0.9;
+        ctx.beginPath(); ctx.moveTo(px0, py0); ctx.lineTo(x, y); ctx.stroke();
+      }
+      ctx.fillStyle = a.lasca ? f.cor : "#ffffff";
+      if (a.lasca) {                                  // lasca de pedra/cristal: losango girando
+        const r = a.r * 1.5, g = t / 90 + a.ex;
+        ctx.beginPath();
+        ctx.moveTo(x + Math.cos(g) * r, y + Math.sin(g) * r); ctx.lineTo(x + Math.cos(g + 1.9) * r * 0.5, y + Math.sin(g + 1.9) * r * 0.5);
+        ctx.lineTo(x - Math.cos(g) * r, y - Math.sin(g) * r); ctx.lineTo(x + Math.cos(g - 1.9) * r * 0.5, y + Math.sin(g - 1.9) * r * 0.5);
+        ctx.closePath(); ctx.fill();
+      } else { ctx.beginPath(); ctx.arc(x, y, a.r, 0, 6.29); ctx.fill(); }
+    }
+    // 4) chegou na nave: anel abrindo e clarão
+    if (k > 0.8) {
+      const c = Math.min(1, (k - 0.8) / 0.9);
+      ctx.globalAlpha = (1 - c) * 0.9; ctx.strokeStyle = f.cor; ctx.lineWidth = 3 * (1 - c) + 0.6;
+      ctx.beginPath(); ctx.arc(p.x, p.y, 20 + c * 46, 0, 6.29); ctx.stroke();
+      ctx.globalAlpha = (1 - c) * 0.35; ctx.lineWidth = 8 * (1 - c);
+      ctx.beginPath(); ctx.arc(p.x, p.y, 16 + c * 30, 0, 6.29); ctx.stroke();
+      ctx.globalAlpha = (1 - c) * 0.6;
+      const gb = 34 + c * 14;
+      ctx.drawImage(brilho, p.x - gb, p.y - gb, gb * 2, gb * 2);
+    }
+  }
+  ctx.globalCompositeOperation = "source-over";
+  ctx.globalAlpha = 1; ctx.lineWidth = 1;
+}
 
 /* hash inteiro → 0..1, para gerar o mesmo campo sempre no mesmo lugar */
 function h01(a, b, c) {
@@ -2441,7 +2668,7 @@ function gerarMissao() {
     m = { tipo:"matar", alvo:t, qtd:q, titulo:`Abater ${q}× ${ENEMIES[t].nome}`,
           rec:{ cred: Math.round(ENEMIES[t].cred*q*0.85), xp: Math.round(ENEMIES[t].xp*q*0.7), honra:0 } };
   } else if (r < 0.62) {
-    const k = Object.keys(RES)[Math.floor(Math.random()*3)];
+    const k = RES_DROP[Math.floor(Math.random()*RES_DROP.length)];
     const q = Math.round((14 + Math.random()*26) * (k === "cristal" ? 0.3 : 1));
     m = { tipo:"coletar", alvo:k, qtd:Math.max(3,q), titulo:`Coletar ${Math.max(3,q)}× ${RES[k].nome}`,
           rec:{ cred: Math.round(RES[k].preco*q*1.5), xp: Math.round(220*escala), honra:0 } };
@@ -2555,6 +2782,8 @@ cv.addEventListener("pointerdown", e => {
     if (dist(px, py, l.x, l.y) < 24) { aColetar = l; tipoColeta = "loot"; break; }
   if (!aColetar) for (const cx of G.caixas)
     if (dist(px, py, cx.x, cx.y) < 28) { aColetar = cx; tipoColeta = "caixa"; break; }
+  if (!aColetar) for (const m of (G.minerios || []))
+    if (minerioPronto(m) && dist(px, py, m.x, m.y) < m.tam * 0.5 + 8) { aColetar = m; tipoColeta = "minerio"; break; }
   if (aColetar) {
     G.coleta = { obj: aColetar, tipo: tipoColeta, t0: null };
     const q = pontoDeColeta(aColetar);
@@ -3126,14 +3355,19 @@ function atualizar(dt) {
   // coleta: a nave voa até o ponto e recolhe assim que chega perto
   if (G.coleta) {
     const o = G.coleta.obj;
-    const lista = G.coleta.tipo === "loot" ? G.loot : G.caixas;
+    const lista = G.coleta.tipo === "loot" ? G.loot : G.coleta.tipo === "minerio" ? G.minerios : G.caixas;
     const idx = lista.indexOf(o);
     if (idx < 0) G.coleta = null;
     else if (dist(p.x, p.y, pontoDeColeta(o).x, pontoDeColeta(o).y) <= PARADA_COLETA) {
       if (G.coleta.t0 == null) G.coleta.t0 = T;
       if (T - G.coleta.t0 >= TEMPO_COLETA) {
-        if (G.coleta.tipo === "loot") coletar(o); else abrirCaixa(o);
-        lista.splice(idx, 1);
+        // carga cheia: o item fica no espaço em vez de sumir
+        const ok = G.coleta.tipo === "loot" ? coletar(o)
+                 : G.coleta.tipo === "minerio" ? coletarMinerio(o) : abrirCaixa(o);
+        if (ok !== false) {
+          lista.splice(idx, 1);
+          if (G.coleta.tipo === "minerio") spawnMinerio(T + MIN_RENASCE);
+        }
         G.coleta = null;
       }
     } else G.coleta.t0 = null;
@@ -3955,14 +4189,29 @@ function matarInimigo(en) {
 
 function coletar(l) {
   const livre = cargoMax() - cargaUsada();
-  if (livre <= 0) { toast("Carga cheia — venda na base"); return; }
+  if (livre <= 0) { toast("Carga cheia — venda na base"); return false; }
   const q = Math.min(livre, l.qtd);
+  efeitoColeta(l.x, l.y, RES[l.tipo].cor);
   G.carga[l.tipo] += q;
   progredirMissao("coletar", l.tipo, q);
   G.danos.push({ x:G.player.x, y:G.player.y-40, txt:"+"+q+" "+RES[l.tipo].curto, t:G.tempo, cor:RES[l.tipo].cor });
   registrarGanho(`<span style="color:${RES[l.tipo].cor}">+${q} ${RES[l.tipo].nome}</span>`);
   avisoColeta(`+${q} ${RES[l.tipo].nome}`);
   beep(660, 0.035);
+}
+
+/* Asteroide de mapa: sempre 1 unidade. */
+function coletarMinerio(m) {
+  if (cargoMax() - cargaUsada() <= 0) { toast("Carga cheia — venda na base"); return false; }
+  const R = RES[m.tipo];
+  G.carga[m.tipo] += 1;
+  progredirMissao("coletar", m.tipo, 1);
+  efeitoColeta(m.x, m.y, R.cor, m);
+  G.danos.push({ x:G.player.x, y:G.player.y-40, txt:"+1 "+R.curto, t:G.tempo, cor:R.cor });
+  registrarGanho(`<span style="color:${R.cor}">+1 ${R.nome}</span>`);
+  avisoColeta(`+1 ${R.nome}`);
+  beep(520, 0.04);
+  return true;
 }
 
 function abrirCaixa(c) {
@@ -3981,13 +4230,13 @@ function abrirCaixa(c) {
   else if (c.tipo === "foguete") { const q = 3+Math.floor(Math.random()*6); G.foguetes.R310 += q;
                                 registrarGanho(`<b>Caixa de bônus</b><br><span style="color:#ff8a3d">+${q} foguetes R-310</span>`);
                                 avisoColeta(`+${q} foguetes R-310`); }
-  else { const k = Object.keys(RES)[Math.floor(Math.random()*3)];
+  else { const k = RES_DROP[Math.floor(Math.random()*RES_DROP.length)];
          const q = Math.min(cargoMax()-cargaUsada(), 3+Math.floor(Math.random()*8));
          if (q > 0) { G.carga[k] += q; progredirMissao("coletar", k, q);
                       registrarGanho(`<b>Caixa de bônus</b><br><span style="color:${RES[k].cor}">+${q} ${RES[k].nome}</span>`);
                       avisoColeta(`+${q} ${RES[k].nome}`); }
          else toast("Caixa encontrada, mas a carga está cheia"); }
-  explosao(c.x, c.y, "#8affd8", 14);
+  efeitoColeta(c.x, c.y, { cred:"#ffd166", mcb:"#7ee8ff", ucb:"#c66bff", foguete:"#ff8a3d" }[c.tipo] || "#8affd8");
   beep(880, 0.05);
 }
 
@@ -4327,6 +4576,7 @@ function desenhar(t) {
   if (TEM_BASE()) desenharEstacao(t);
   for (const gt of gates()) desenharPortal(gt, t);
 
+  desenharMinerios(t);
   for (const c of G.caixas) desenharCaixa(c, t);
 
   for (const l of G.loot) {
@@ -4380,6 +4630,7 @@ function desenhar(t) {
     ctx.beginPath(); ctx.arc(p.dx,p.dy,7+Math.sin(t/150)*2,0,6.29); ctx.stroke();
   }
 
+  desenharFxColeta(t);
   desenharPoeira();
   desenharExplosoes(t);
   ctx.globalCompositeOperation = "lighter";     // partículas somam luz
@@ -5714,7 +5965,7 @@ function desenharOndas() {
 /* Marca o que a nave está indo recolher. */
 function desenharColeta(t) {
   if (!G.coleta) return;
-  const o = G.coleta.obj, r = 22;
+  const o = G.coleta.obj, r = o.tam ? o.tam * 0.5 + 6 : 22;
   ctx.strokeStyle = "rgba(138,255,216,.6)"; ctx.lineWidth = 1.5;
   ctx.setLineDash([4,4]); ctx.lineDashOffset = -t/70;
   ctx.beginPath(); ctx.arc(o.x, o.y, r, 0, 6.29); ctx.stroke();
@@ -6541,6 +6792,9 @@ function desenharRadar() {
   ctx.setLineDash([]);
   ctx.fillStyle = "rgba(255,209,102,.85)";
   for (const c of G.caixas) ctx.fillRect(x+c.x*sx-1, y+c.y*sy-1, 3,3);
+  for (const m of (G.minerios || [])) if (minerioPronto(m)) {
+    ctx.fillStyle = RES[m.tipo].cor; ctx.fillRect(x+m.x*sx-1, y+m.y*sy-1, 2,2);
+  }
   // inimigos sempre em vermelho (mais forte quando estão te perseguindo)
   for (const en of G.inimigos) {
     ctx.fillStyle = en.agro ? "#ff2b2b" : "rgba(255,90,90,.7)";
@@ -7010,7 +7264,8 @@ function atualizarHUD() {
 
   el("pCred").textContent = fmt(G.creditos);
   el("cargoTxt").textContent = cargaUsada() + " / " + cargoMax();
-  el("resTxt").textContent = `Ti ${G.carga.titanio} · Pl ${G.carga.plasma} · Cr ${G.carga.cristal}`;
+  el("resTxt").textContent = Object.keys(RES).filter(k => !RES[k].mapa || G.carga[k])
+    .map(k => RES[k].curto + " " + G.carga[k]).join(" · ");
   el("ammoTxt").innerHTML =
     AMMO_ORDER.map((k,i) => {
       const on = G.ammoSel === k;
@@ -8665,6 +8920,9 @@ function aplicarSave(d) {
                   "ammoSel","calibre","foguetes","foguetSel","projeteis","projetilSel","drones","skylab","carga","setor","clan",
                   "clanXp","missoes","oferta","missaoSeq","stats","jogado","formacoes","formacaoSel"];
   for (const c of campos) if (d[c] !== undefined) G[c] = d[c];
+  // saves antigos não têm os minérios de mapa
+  if (!G.carga || typeof G.carga !== "object") G.carga = {};
+  for (const k in RES) G.carga[k] = Math.max(0, +G.carga[k] || 0);
   // formações: só ficam as que existem hoje; a normal não precisa ser comprada
   G.formacoes = (Array.isArray(G.formacoes) ? G.formacoes : [])
     .filter((id,i,a) => FORMACOES[id] && id !== "normal" && a.indexOf(id) === i);
