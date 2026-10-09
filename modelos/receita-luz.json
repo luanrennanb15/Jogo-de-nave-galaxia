@@ -1,0 +1,7 @@
+{
+  "nome": "Padrão B — Astra Conflux",
+  "descricao": "Receita de luz padrão das naves. Luz principal fixa no mundo, vinda do canto superior esquerdo da tela; preenchimento fraco do canto inferior direito (sombra suave); contorno azul em volta da nave toda (fresnel) mais contra-luzes leves; motores têm luz própria no jogo, separada desta.",
+  "camera": { "inclinacao_graus": 40, "direcoes": 32, "inclinacoes_curva": [-45,-37.5,-30,-22.5,-15,-7.5,0,7.5,15,22.5,30,37.5,45], "pixels_por_unidade": 2.5 },
+  "luz": { "env":0.30, "key":3.8, "kx":-0.8, "ky":0.8, "kz":0.7, "fill":0.30, "fx":0.7, "fy":-0.7, "fz":0.4, "rim":1.5, "rim2":0.6, "amb":0.12, "exp":0.95, "rimStr":1.4, "rimPow":2.4, "rimCol":"#3fb6ff" },
+  "ajustes_por_modelo": { "devastador": { "maxMetal":0.5, "emis":1.6 }, "tita": { "maxMetal":0.5, "emis":1.6 } }
+}

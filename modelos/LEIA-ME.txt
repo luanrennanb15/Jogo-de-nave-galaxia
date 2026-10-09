@@ -55,3 +55,14 @@ Esta pasta tem cerca de 225 MB e está versionada no git, o que
 inchou o repositório para 165 MB. Vale tirar do controle de
 versão (ver a conversa) — os arquivos continuam no seu disco,
 só param de ir junto para o GitHub.
+
+RECEITA DE LUZ (PADRÃO DAS NAVES)
+---------------------------------
+receita-luz.json guarda a iluminação padrão usada para renderizar as naves
+(definida na Faísca, "Padrão B"): luz principal fixa no mundo vindo do
+canto superior esquerdo da tela, sombra suave no inferior direito, contorno
+azul em volta da nave toda, câmera inclinada 40°, 32 direções e 13
+inclinações de curva. Para padronizar outra nave, é renderizar com a mesma
+receita (Devastador e Titã precisam do ajuste de metal anotado no arquivo).
+
+  faisca.glb -> nave-faisca-0.webp ... nave-faisca-12.webp  (câmera inclinada)
