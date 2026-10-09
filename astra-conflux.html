@@ -2005,8 +2005,8 @@ function camadaFundo(img, cor, z, alfa, escala, tre) {
   let ox = -(((G.cam.x + tre.x) * z) % w); if (ox > 0) ox -= w;
   let oy = -(((G.cam.y + tre.y) * z) % h); if (oy > 0) oy -= h;
   ctx.globalAlpha = alfa;
-  for (let x = ox; x < cv.width; x += w)
-    for (let y = oy; y < cv.height; y += h)
+  for (let x = ox; x < VW; x += w)
+    for (let y = oy; y < VH; y += h)
       ctx.drawImage(t, x, y, w, h);
   ctx.globalAlpha = 1;
 }
@@ -2072,7 +2072,30 @@ function progredirMissao(tipo, alvo, qtd) {
 }
 /* ===================== INPUT ===================== */
 
-function resize() { cv.width = cv.clientWidth; cv.height = cv.clientHeight; }
+/* NITIDEZ — o jogo pensa em "unidades de mundo" (VW x VH é o que a câmera
+   mostra), mas o canvas agora tem os pixels de verdade da tela. Antes o
+   buffer tinha o tamanho em pixels CSS: no iPhone (3 pixels físicos por
+   pixel CSS) tudo era desenhado pequeno e esticado, e ficava borrado.
+   ESC = pixels do buffer por unidade de mundo; desenhar() aplica essa
+   escala no começo de cada quadro, então o resto do código não muda.
+   MAX_PIXELS segura o custo: acima disso a nitidez é reduzida um pouco
+   para não pesar no celular. */
+let VW = 0, VH = 0, ESC = 1;
+const MAX_PIXELS = 2.6e6;
+function ajustarBuffer(vw, vh) {
+  if (!vw || !vh) return;
+  VW = vw; VH = vh;
+  const dpr = window.devicePixelRatio || 1;
+  let esc = Math.max(1, (cv.clientWidth || vw) * dpr / vw);
+  const px = vw * vh * esc * esc;
+  if (px > MAX_PIXELS) esc = Math.max(1, esc * Math.sqrt(MAX_PIXELS / px));
+  ESC = esc;
+  cv.width  = Math.round(vw * esc);
+  cv.height = Math.round(vh * esc);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = "high";
+}
+function resize() { ajustarBuffer(cv.clientWidth, cv.clientHeight); }
 window.addEventListener("resize", resize);
 resize();
 
@@ -2719,8 +2742,8 @@ function atualizar(dt) {
 
   atualizarPoeira(dt);
   // câmera presa na nave, sem adiantar nem deslizar: a tela só se mexe pela tremida
-  G.cam.x = clamp(p.x - cv.width/2, -MARGEM_FORA, Math.max(0, WORLD.w - cv.width) + MARGEM_FORA);
-  G.cam.y = clamp(p.y - cv.height/2, -MARGEM_FORA, Math.max(0, WORLD.h - cv.height) + MARGEM_FORA);
+  G.cam.x = clamp(p.x - VW/2, -MARGEM_FORA, Math.max(0, WORLD.w - VW) + MARGEM_FORA);
+  G.cam.y = clamp(p.y - VH/2, -MARGEM_FORA, Math.max(0, WORLD.h - VH) + MARGEM_FORA);
 
   autoSave();
   atualizarHUD();
@@ -3523,7 +3546,7 @@ function desenharFundo(t, tre) {
     const px = planeta.x - (G.cam.x + tre.x) * planeta.z;
     const py = planeta.y - (G.cam.y + tre.y) * planeta.z;
     if (px > -planeta.r*1.4 && py > -planeta.r*1.4 &&
-        px < cv.width + planeta.r*1.4 && py < cv.height + planeta.r*1.4) {
+        px < VW + planeta.r*1.4 && py < VH + planeta.r*1.4) {
       const gr = ctx.createRadialGradient(px - planeta.r*0.35, py - planeta.r*0.35, planeta.r*0.1,
                                           px, py, planeta.r);
       gr.addColorStop(0, planeta.cor2); gr.addColorStop(0.55, planeta.cor);
@@ -3572,32 +3595,33 @@ function luzDaNave(t) {
 /* Escurece as bordas da tela e puxa o olho para o meio. */
 let vinheta = null, vinhetaTam = "";
 function desenharVinheta() {
-  const chave = cv.width + "x" + cv.height;
+  const chave = VW + "x" + VH;
   if (chave !== vinhetaTam) {
-    const g = ctx.createRadialGradient(cv.width/2, cv.height/2, Math.min(cv.width,cv.height)*0.34,
-                                       cv.width/2, cv.height/2, Math.max(cv.width,cv.height)*0.78);
+    const g = ctx.createRadialGradient(VW/2, VH/2, Math.min(VW,VH)*0.34,
+                                       VW/2, VH/2, Math.max(VW,VH)*0.78);
     g.addColorStop(0, "rgba(0,0,0,0)");
     g.addColorStop(1, "rgba(0,0,0,.55)");
     vinheta = g; vinhetaTam = chave;
   }
-  ctx.fillStyle = vinheta; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.fillStyle = vinheta; ctx.fillRect(0,0,VW,VH);
 }
 
 function desenhar(t) {
-  ctx.clearRect(0,0,cv.width,cv.height);
-  if (!G || !G.player) { ctx.fillStyle = "#04060f"; ctx.fillRect(0,0,cv.width,cv.height); return; }
+  ctx.setTransform(ESC, 0, 0, ESC, 0, 0);       // unidade de mundo -> pixel real
+  ctx.clearRect(0,0,VW,VH);
+  if (!G || !G.player) { ctx.fillStyle = "#04060f"; ctx.fillRect(0,0,VW,VH); return; }
   const s = sectorData();
 
-  const g = ctx.createLinearGradient(0,0,0,cv.height);
+  const g = ctx.createLinearGradient(0,0,0,VH);
   g.addColorStop(0, s.cor); g.addColorStop(1, "#04060f");
-  ctx.fillStyle = g; ctx.fillRect(0,0,cv.width,cv.height);
+  ctx.fillStyle = g; ctx.fillRect(0,0,VW,VH);
 
   const tre = tremorAtual();                   // deslocamento da tremida
   desenharFundo(t, tre);
 
   for (const st of stars) {
     const x = st.x - (G.cam.x + tre.x)*st.z, y = st.y - (G.cam.y + tre.y)*st.z;
-    if (x < -10 || y < -10 || x > cv.width+10 || y > cv.height+10) continue;
+    if (x < -10 || y < -10 || x > VW+10 || y > VH+10) continue;
     const cintila = 0.72 + 0.28 * Math.sin(t/st.ritmo*6.28 + st.fase);
     ctx.globalAlpha = (0.18 + st.z*0.62) * cintila;
     ctx.fillStyle = st.cor;
@@ -3709,20 +3733,20 @@ function desenharAvisoFora(t) {
   ctx.save();
   ctx.strokeStyle = `rgba(255,50,50,${pulso*0.9})`;
   ctx.lineWidth = 14;
-  ctx.strokeRect(7, 7, cv.width-14, cv.height-14);
+  ctx.strokeRect(7, 7, VW-14, VH-14);
 
   ctx.textAlign = "center";
   ctx.font = "800 42px system-ui";
   ctx.fillStyle = `rgba(255,60,60,${pulso})`;
-  ctx.fillText("DANGER", cv.width/2, 96);
+  ctx.fillText("DANGER", VW/2, 96);
   ctx.font = "600 14px system-ui";
   ctx.fillStyle = "#ffb0b0";
-  ctx.fillText("Você saiu do setor — volte para a zona do mapa", cv.width/2, 120);
+  ctx.fillText("Você saiu do setor — volte para a zona do mapa", VW/2, 120);
   const fd = G.player.foraDesde || G.tempo;
   const carencia = CARENCIA_FORA - (G.tempo - fd);
   if (carencia > 0) {
     ctx.fillStyle = "#ffd166";
-    ctx.fillText("casco resistindo por " + (carencia/1000).toFixed(1) + "s", cv.width/2, 142);
+    ctx.fillText("casco resistindo por " + (carencia/1000).toFixed(1) + "s", VW/2, 142);
   }
   ctx.restore();
 }
@@ -4558,8 +4582,8 @@ function desenharRadar() {
   // com a HUD aberta o minimapa sairia atrás do painel de créditos
   if (emCel && document.body.classList.contains("hudAberta")) { radarRect.w = 0; return; }
   const w = emCel ? 136 : 168, h = emCel ? 94 : 116;
-  const x = cv.width - w - (emCel ? 10 : 12);
-  const y = emCel ? Math.round(cv.height * 0.20) : cv.height - h - 108;
+  const x = VW - w - (emCel ? 10 : 12);
+  const y = emCel ? Math.round(VH * 0.20) : VH - h - 108;
   radarRect.x = x; radarRect.y = y; radarRect.w = w; radarRect.h = h;
 
   // leitura de coordenadas logo acima do minimapa
@@ -7095,9 +7119,9 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
       /* o botao Saltar e posicionado em unidade de mundo pelo codigo
          original; com o zoom isso deixa de ser pixel de tela */
       const sb = el("saltoBox");
-      if (sb && sb.style.display === "block" && cv.width) {
+      if (sb && sb.style.display === "block" && VW) {
         const cr = cv.getBoundingClientRect();
-        const fx = cr.width / cv.width, fy = cr.height / cv.height;
+        const fx = cr.width / VW, fy = cr.height / VH;
         const lx = parseFloat(sb.style.left), ty = parseFloat(sb.style.top);
         if (!isNaN(lx)) sb.style.left = (lx * fx).toFixed(1) + "px";
         if (!isNaN(ty)) sb.style.top  = (ty * fy).toFixed(1) + "px";
@@ -7116,8 +7140,8 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
   };
 
   /* ---------- campo de visao ----------
-     A camera mostra exatamente cv.width unidades de mundo. Como resize()
-     punha cv.width = largura em pixels CSS, no celular deitado sobravam
+     A camera mostra exatamente VW unidades de mundo. Como resize()
+     punha VW = largura em pixels CSS, no celular deitado sobravam
      ~780 unidades contra ~1920 no computador: dai a sensacao de imagem
      cortada. Aqui o buffer passa a ser maior que a tela, entao cabe mais
      mundo e de quebra a imagem fica menos esticada. */
@@ -7132,8 +7156,7 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
     let escala = Math.max(1, Math.min(alvoAltura / ac, 2.6));
     let larg = Math.round(lc * escala);
     if (larg > 2200) { larg = 2200; escala = larg / lc; }
-    cv.width  = larg;
-    cv.height = Math.round(ac * escala);
+    ajustarBuffer(larg, Math.round(ac * escala));
   }
 
   /* resize() original foi registrado por referencia, entao nao da para
@@ -7150,7 +7173,7 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
     if (!CEL.ativo) return p;
     const r = cv.getBoundingClientRect();
     if (!r.width || !r.height) return p;
-    return { sx: p.sx * cv.width / r.width, sy: p.sy * cv.height / r.height };
+    return { sx: p.sx * VW / r.width, sy: p.sy * VH / r.height };
   };
 
   /* ---------- tela cheia ---------- */
@@ -7173,7 +7196,7 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
   /* muda o zoom sem recarregar: zoomCelular(1.8) mostra mais mundo */
   window.visaoCelular = function (n) {
     if (typeof n === "number" && n >= 300 && n <= 1200) { alvoAltura = n; redimensionarCel(); }
-    return "visao: " + cv.width + " x " + cv.height + " unidades de mundo (alvo de altura " + alvoAltura + ")";
+    return "visao: " + VW + " x " + VH + " unidades de mundo (alvo de altura " + alvoAltura + ")";
   };
   window.zoomCelular = window.visaoCelular;
 
@@ -7183,7 +7206,7 @@ if (typeof CanvasRenderingContext2D !== "undefined" && !CanvasRenderingContext2D
     document.body.classList.toggle("modoCel", CEL.ativo);
     window.CEL_ATIVO = CEL.ativo;
     if (CEL.ativo) { montar(); redimensionarCel(); }
-    else { cv.width = cv.clientWidth; cv.height = cv.clientHeight; }
+    else ajustarBuffer(cv.clientWidth, cv.clientHeight);
     return CEL.ativo ? "modo celular ligado" : "modo celular desligado";
   };
 
