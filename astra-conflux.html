@@ -3808,8 +3808,47 @@ function desenharTiro(b, t) {
    Com vários quadros, a inclinação escolhe o quadro — é rotação de verdade,
    vinda do modelo 3D. Com um quadro só, ela é fingida achatando e cisalhando
    o sprite, que num jogo visto de cima engana bem o olho. */
+/* Um quadro da folha inclinada: escolhe a direção mais próxima de `ang` e
+   mistura a figura reta com a da curva conforme a inclinação `inc` (−1 a 1). */
+function quadroIncl(c, x, y, ang, inc, escala) {
+  const a = ((ang % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+  const i = Math.round(a / (2*Math.PI) * c.N) % c.N;
+  const sx = (i % c.cols) * c.fw, sy = Math.floor(i / c.cols) * c.fh;
+  const w = c.fw / c.px * escala, h = c.fh / c.px * escala;
+  ctx.drawImage(c.imgs[1], sx, sy, c.fw, c.fh, x - w/2, y - h/2, w, h);
+  const v = clamp(inc, -1, 1);
+  if (Math.abs(v) > 0.04) {
+    const a0 = ctx.globalAlpha;
+    ctx.globalAlpha = a0 * Math.min(1, Math.abs(v) * 1.6);
+    ctx.drawImage(c.imgs[v > 0 ? 2 : 0], sx, sy, c.fw, c.fh, x - w/2, y - h/2, w, h);
+    ctx.globalAlpha = a0;
+  }
+}
+
 function desenharNaveSprite(s, x, y, ang, t) {
   const p = G.player;
+  const ci = inclDaNave(G.nave);
+  if (ci) {
+    /* chama do motor: desenhada no plano da nave e achatada pela inclinação
+       da câmera, para sair do lugar certo em qualquer direção */
+    const w = s.tam * (s.mold || 1), h = w * s.alt / s.larg;
+    const respiro = !p.movendo ? 1 + Math.sin(t/620)*0.018 : 1;
+    ctx.save();
+    ctx.translate(x, y); ctx.scale(1, ci.cosInc); ctx.rotate(ang);
+    chamaDoMotor(w, h, t);
+    ctx.restore();
+    const inc = inclinacaoTita * (s.inv || 1);
+    quadroIncl(ci, x, y, ang, inc, respiro);
+    const desde = G.tempo - (p.ultimoDano || -9999);       // clarão ao apanhar
+    if (desde < 260) {
+      ctx.save();
+      ctx.globalAlpha *= 0.55 * (1 - desde/260);
+      ctx.globalCompositeOperation = "lighter";
+      quadroIncl(ci, x, y, ang, 0, respiro);
+      ctx.restore();
+    }
+    return;
+  }
   const inc = inclinacaoTita;                     // −1 a 1, lido da velocidade de giro
   const w = s.tam * (s.mold || 1), h = w * s.alt / s.larg;
   const respiro = !p.movendo ? 1 + Math.sin(t/620)*0.018 : 1;
@@ -3914,6 +3953,32 @@ const SPRITE_NAVE = {
   devastador: { arq:"nave-devastador.webp",tam:    97, q: 33, larg:105.667, alt:79, fw:317, fh:237, mold:1.1, inv: 1 },
   tita:       { arq:"nave-tita.webp",      tam: 106.3, q: 33, larg:114.333, alt:71, fw:343, fh:213, mold:1.1, inv: 1 },
 };
+/* ---------------------------------------------------------------------------
+   CÂMERA INCLINADA — em vez de girar uma figura vista de cima, a nave tem um
+   desenho para cada direção, renderizado do modelo 3D com a câmera olhando de
+   cima e inclinada (como no DarkOrbit). Assim aparecem o bico, a lateral e os
+   motores conforme ela vira, e a luz fica parada no mundo.
+     arqs: uma folha por inclinação de curva (esquerda, reta, direita)
+     N: quantas direções (a 0 aponta para a direita e segue no sentido horário)
+     cols: colunas da grade;  fw/fh: tamanho de cada quadro em pixels
+     px: pixels por unidade do jogo;  inc: inclinação da câmera, em graus
+   A tira antiga (vista de cima) continua sendo usada pela loja e como reserva
+   enquanto as folhas carregam. As folhas só são baixadas quando a nave entra
+   em uso, para não pesar no celular. */
+const INCL_NAVE = {
+  faisca: { arqs:["nave-faisca-0.webp","nave-faisca-1.webp","nave-faisca-2.webp"],
+            N:64, cols:8, fw:196, fh:188, px:2.5, inc:40 },
+};
+function inclDaNave(id) {
+  const c = INCL_NAVE[id];
+  if (!c) return null;
+  if (!c.imgs) {                                // primeira vez: começa a baixar
+    c.imgs = c.arqs.map(a => { const i = new Image(); i.src = a; return i; });
+    c.cosInc = Math.cos(c.inc * Math.PI / 180);
+  }
+  return c.imgs.every(i => i.complete && i.naturalWidth > 0) ? c : null;
+}
+
 for (const id in SPRITE_NAVE) {
   const s = SPRITE_NAVE[id];
   s.img = new Image(); s.img.src = s.arq;
@@ -3986,10 +4051,12 @@ function alimentarRastro(dt) {
     const tras = p.ang + Math.PI;
     const sp = spriteDaNave(G.nave);
     const d = sp ? sp.tam * 0.44 : 15;
+    const ci = sp ? inclDaNave(G.nave) : null;
+    const ky = ci ? ci.cosInc : 1;            // câmera inclinada achata o eixo vertical
     for (const lado of (sp ? [-1, 1] : [0])) {
       rastro.push({
         x: p.x + Math.cos(tras) * d + Math.cos(tras + Math.PI/2) * lado * 9,
-        y: p.y + Math.sin(tras) * d + Math.sin(tras + Math.PI/2) * lado * 9,
+        y: p.y + (Math.sin(tras) * d + Math.sin(tras + Math.PI/2) * lado * 9) * ky,
         t: G.tempo,
       });
     }
@@ -4373,7 +4440,11 @@ function desenharInimigo(en, t) {
     /* No mapa de PvP o piloto tem nave de verdade: usa a mesma tira de
        sprites da sua, inclusive escolhendo o quadro pela inclinação. */
     const sp = ed.nave ? spriteDaNave(ed.nave) : null;
-    if (sp) {
+    const ciP = ed.nave ? inclDaNave(ed.nave) : null;
+    if (sp && ciP) {
+      desenharDronesInimigo(en);
+      quadroIncl(ciP, en.x, en.y, en.ang, (en.inc || 0) * (sp.inv || 1), r * 3.2 / sp.tam);
+    } else if (sp) {
       desenharDronesInimigo(en);
       const w = r * 3.2 * (sp.mold || 1), h = w * sp.alt / sp.larg;
       const inc = en.inc || 0;
