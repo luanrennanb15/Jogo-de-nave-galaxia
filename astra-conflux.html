@@ -2579,7 +2579,7 @@ function atualizar(dt) {
     const giro = ((en.ang - (en.angAnt == null ? en.ang : en.angAnt) + Math.PI*3) % (Math.PI*2)) - Math.PI;
     en.angAnt = en.ang;
     en.inc = (en.inc || 0) +
-             (clamp(giro * GANHO_INCLINACAO, -1, 1) - (en.inc || 0)) * Math.min(1, 0.15 * dt/16);
+             (clamp(giro * 16 / Math.max(1, dt) * GANHO_INCLINACAO, -1, 1) - (en.inc || 0)) * kQuadro(0.15, dt);
     /* Andando é ter saído do lugar de verdade, não ter intenção de sair.
        É isso que liga motor, halo e esteira — parado, nada disso aparece. */
     en.andando = dist(en.x, en.y, en.xAnt == null ? en.x : en.xAnt,
@@ -4904,6 +4904,23 @@ const INCL_NAVE = {
   tita:       { arqs:Array.from({ length: 13 }, (_, i) => "nave-tita-" + i + ".webp"),
                 N:32, cols:8, fw:272, fh:226, px:2.5, inc:40 },
 };
+/* Inimigos com a mesma câmera inclinada das suas naves (32 direções × 13
+   inclinações, luz Padrão C). `tam` é o comprimento renderizado; no jogo a
+   escala acompanha o tamanho que o bicho já tinha. Por enquanto: o Drone
+   Errante, do primeiro mapa. */
+const INCL_INIMIGO = {
+  errante: { arqs:Array.from({ length: 13 }, (_, i) => "nave-errante-" + i + ".webp"),
+             N:32, cols:8, fw:154, fh:138, px:2.5, inc:40, tam:57 },
+};
+function inclDoInimigo(id) {
+  const c = INCL_INIMIGO[id];
+  if (!c) return null;
+  if (!c.imgs) {
+    c.imgs = c.arqs.map(a => { const i = new Image(); i.src = a; return i; });
+    c.cosInc = Math.cos(c.inc * Math.PI / 180);
+  }
+  return c.imgs.every(i => i.complete && i.naturalWidth > 0) ? c : null;
+}
 function inclDaNave(id) {
   const c = INCL_NAVE[id];
   if (!c) return null;
@@ -5777,6 +5794,24 @@ function desenharInimigo(en, t) {
     desenharEsteiraInimigo(en);
     luzDoInimigo(en, t);
 
+    const ciI = inclDoInimigo(ed.sprite);
+    if (ciI) {
+      /* câmera inclinada: chama no plano da nave (achatada pela câmera) e o
+         quadro certo para a direção e a inclinação, sem fantasma */
+      const esc = (w * 0.9) / ciI.tam;
+      ctx.save(); ctx.translate(en.x, en.y); ctx.scale(1, ciI.cosInc); ctx.rotate(en.ang);
+      if (en.andando) bicoDeChama(w, h, clamp(ed.speed / 3, 0.25, 1), 0, t, en.x, COR_MOTOR_INIMIGO);
+      ctx.restore();
+      quadroIncl(ciI, en.x, en.y, en.ang, inc, esc * respiro, en);
+      const desde = G.tempo - (en.ultimoDano || -9999);   // clarão ao apanhar
+      if (desde < 260) {
+        ctx.save();
+        ctx.globalAlpha = 0.5 * (1 - desde/260);
+        ctx.globalCompositeOperation = "lighter";
+        quadroIncl(ciI, en.x, en.y, en.ang, inc, esc * respiro, en);
+        ctx.restore();
+      }
+    } else {
     ctx.save(); ctx.translate(en.x, en.y); ctx.rotate(en.ang);
     ctx.scale(respiro, respiro);
     /* Um motor só, no meio da traseira, com a mesma chama das suas naves.
@@ -5798,6 +5833,7 @@ function desenharInimigo(en, t) {
       ctx.globalAlpha = 1;
     }
     ctx.restore();
+    }
     if (en.agro) {                                // bravo: brasa vermelha em volta
       ctx.globalCompositeOperation = "lighter";
       const br = ctx.createRadialGradient(en.x, en.y, r*0.6, en.x, en.y, r*2.2);
