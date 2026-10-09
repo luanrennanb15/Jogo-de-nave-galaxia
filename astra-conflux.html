@@ -1181,12 +1181,12 @@ const MULT_ESTACAO  = 3;
 /* Créditos, XP e honra entram sozinhos ao abater.
    Carga e caixas ficam no espaço: basta clicar nelas que a nave vai lá e recolhe,
    com um instante de coleta ao chegar. */
-const TEMPO_COLETA = 0;     // recolhe assim que estaciona, sem espera
+const TEMPO_COLETA = 500;   // depois de estacionar acima do item, meio segundo puxando
 const RAIO_COLETA  = 70;
 /* Onde a nave estaciona para recolher: centralizada no item e um pouco
    acima dele, em vez de pousar em cima e escondê-lo. Tem de ser menor
    que RAIO_COLETA, senão ela para longe demais e nunca recolhe. */
-const AFASTA_COLETA = 46;
+const AFASTA_COLETA = 72;   // estaciona mais alto, para o feixe de coleta aparecer
 /* Quão perto do ponto de estacionamento a nave precisa chegar para recolher.
    Antes bastava estar dentro de RAIO_COLETA do próprio item, e ela recolhia
    de passagem, antes de chegar. */
@@ -1196,7 +1196,7 @@ const ALCANCE_MAO = 900;
 
 /* Ponto onde a nave para para recolher: centralizada no item, um pouco acima. */
 function pontoDeColeta(o) {
-  const a = o.tam ? Math.max(AFASTA_COLETA, o.tam * 0.5 + 26) : AFASTA_COLETA;
+  const a = o.tam ? Math.max(AFASTA_COLETA, o.tam * 0.5 + 54) : AFASTA_COLETA;
   return { x: clamp(o.x, 20, WORLD.w - 20),
            y: clamp(o.y - a, 20, WORLD.h - 20) };
 }
@@ -5965,17 +5965,34 @@ function desenharOndas() {
 function desenharColeta(t) {
   if (!G.coleta) return;
   const o = G.coleta.obj, r = o.tam ? o.tam * 0.5 + 6 : 22;
-  ctx.strokeStyle = "rgba(138,255,216,.6)"; ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(207,232,255,.45)"; ctx.lineWidth = 1.2;
   ctx.setLineDash([4,4]); ctx.lineDashOffset = -t/70;
   ctx.beginPath(); ctx.arc(o.x, o.y, r, 0, 6.29); ctx.stroke();
   ctx.setLineDash([]);
 
-  if (G.coleta.t0 != null) {                 // chegou: fecha o anel bem rápido
-    const k = Math.min(1, (G.tempo - G.coleta.t0) / TEMPO_COLETA);
-    ctx.strokeStyle = "#8affd8"; ctx.lineWidth = 3.5;
+  if (G.coleta.t0 != null) {                 // chegou: feixe ligado e o anel enche em meio segundo
+    const k = Math.min(1, (G.tempo - G.coleta.t0) / TEMPO_COLETA), p = G.player;
+    const dx = o.x - p.x, dy = o.y - p.y, d = Math.hypot(dx, dy) || 1, nx = -dy / d, ny = dx / d;
+    const pul = 0.75 + 0.25 * Math.sin(t / 45);
+    ctx.globalCompositeOperation = "lighter";
+    ctx.fillStyle = FX_COR; ctx.globalAlpha = 0.12 * pul;
+    ctx.beginPath();
+    ctx.moveTo(p.x + nx * 1.5, p.y + ny * 1.5); ctx.lineTo(o.x + nx * r * 0.8, o.y + ny * r * 0.8);
+    ctx.lineTo(o.x - nx * r * 0.8, o.y - ny * r * 0.8); ctx.lineTo(p.x - nx * 1.5, p.y - ny * 1.5); ctx.closePath(); ctx.fill();
+    ctx.strokeStyle = FX_COR; ctx.globalAlpha = 0.35 * pul; ctx.lineWidth = 0.8;
+    ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(o.x, o.y); ctx.stroke();
+    // pontinhos subindo pelo feixe
+    for (let i = 0; i < 4; i++) {
+      const u = ((t / 420 + i / 4) % 1);
+      ctx.globalAlpha = 0.5 * Math.sin(u * Math.PI);
+      ctx.beginPath(); ctx.arc(o.x - dx * u, o.y - dy * u, 1.3, 0, 6.29); ctx.fill();
+    }
+    ctx.globalCompositeOperation = "source-over";
+    ctx.globalAlpha = 0.85; ctx.strokeStyle = FX_COR; ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(o.x, o.y, r, -Math.PI/2, -Math.PI/2 + k*6.283); ctx.stroke();
+    ctx.globalAlpha = 1;
   } else {
-    ctx.font = "600 10px system-ui"; ctx.textAlign = "center"; ctx.fillStyle = "#8affd8";
+    ctx.font = "600 10px system-ui"; ctx.textAlign = "center"; ctx.fillStyle = "#cfe8ff";
     ctx.fillText("indo recolher", o.x, o.y + r + 14);
   }
   ctx.lineWidth = 1;
