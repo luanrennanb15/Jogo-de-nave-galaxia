@@ -2809,13 +2809,25 @@ const SALVAS = {
 };
 const SALVA_PADRAO = [[{ x: 0.40, y: -0.12 }, { x: 0.40, y: 0.12 }], [{ x: 0.50, y: 0 }]];
 let grupoSalva = 0;
+/* Rolagem na curva: com a nave deitada, o que fica do lado (canhão da asa,
+   bocal do motor) chega mais perto do eixo e sobe ou desce na tela. Sem isto
+   a chama e o clarão do canhão ficavam soltos ao lado da nave deitada —
+   quanto mais larga a nave (Lâmina, Titã), mais longe. Devolve o lado já
+   encurtado e o quanto aquele ponto anda na vertical da tela. */
+let SINAL_ROL = 1;
+function rolagemLateral(ly) {
+  const ci = inclDaNave(G.nave);
+  if (!ci) return [ly, 0];
+  const th = clamp(inclinacaoTita, -1, 1) * Math.PI / 4;           // folhas vão de −45° a +45°
+  return [ly * Math.cos(th), SINAL_ROL * ly * Math.sin(th) * Math.sin(ci.inc * Math.PI / 180)];
+}
 function posDoCanhao(spec) {
   const p = G.player, sp = spriteDaNave(G.nave);
   const tam = sp ? sp.tam : 30;
   const ci = sp ? inclDaNave(G.nave) : null, ky = ci ? ci.cosInc : 1;
-  const lx = spec.x * tam, ly = spec.y * tam;
+  const lx = spec.x * tam, [ly, dz] = rolagemLateral(spec.y * tam);
   const co = Math.cos(p.ang), sn = Math.sin(p.ang);
-  return { x: p.x + lx*co - ly*sn, y: p.y + (lx*sn + ly*co) * ky };
+  return { x: p.x + lx*co - ly*sn, y: p.y + (lx*sn + ly*co) * ky + dz };
 }
 
 /* Clarão de disparo (boca do canhão), como tiro de arma: uma labareda em
@@ -4747,8 +4759,13 @@ function chamaDoMotor(w, h, t) {
   if (v <= 0.03) return;
   const sp = spriteDaNave(G.nave), m = motorDaNave();
   const tam = sp ? sp.tam : w, base = -m.x * tam, ab = m.y * tam;
-  for (const [dy, sem] of [[-ab, 0], [ab, 1.7]]) {
+  const ci = inclDaNave(G.nave), ang = G.player.ang;
+  for (const [dy0, sem] of [[-ab, 0], [ab, 1.7]]) {
+    // rolagem: encurta o lado e sobe/desce na tela (convertido para o plano da nave)
+    const [dy, dz] = rolagemLateral(dy0);
+    const vz = ci ? dz / ci.cosInc : 0;
     ctx.save();
+    ctx.translate(vz * Math.sin(ang), vz * Math.cos(ang));
     ctx.translate(base, dy); ctx.rotate(dobra); ctx.translate(-base, -dy);
     bicoDeChama(w, h, v, dy, t, sem, COR_MOTOR, m.x * tam / w);
     ctx.restore();
@@ -4956,11 +4973,11 @@ const motorDaNave = () => MOTOR_NAVE[G.nave] || MOTOR_NAVE.faisca;
 function bocalDoMotor(lado) {
   const p = G.player, sp = spriteDaNave(G.nave), m = motorDaNave();
   const tam = sp ? sp.tam : 30;
-  const lx = -m.x * tam, ly = m.y * tam * lado;
+  const lx = -m.x * tam, [ly, dz] = rolagemLateral(m.y * tam * lado);
   const c = Math.cos(p.ang), sn = Math.sin(p.ang);
   const ci = sp ? inclDaNave(G.nave) : null;
   const ky = ci ? ci.cosInc : 1;
-  return { x: p.x + lx*c - ly*sn, y: p.y + (lx*sn + ly*c) * ky };
+  return { x: p.x + lx*c - ly*sn, y: p.y + (lx*sn + ly*c) * ky + dz };
 }
 function alimentarRastro(dt) {
   const p = G.player;
