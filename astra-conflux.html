@@ -4458,7 +4458,7 @@ function desenharExplosoes(t) {
 function desenharTiro(b, t) {
   const cx = Math.cos(b.ang), sy = Math.sin(b.ang);
 
-  if (b.forma === "orb") { desenharFeixe(b); return; }          // DRNO-25: tiro normal na cor da munição
+  if (b.forma === "orb") return;          // DRNO-25: o tiro não aparece, só os anéis de dreno
 
   const feixe = !b.foguete && b.forma !== "missil";
   if (feixe) { desenharFeixe(b); return; }
