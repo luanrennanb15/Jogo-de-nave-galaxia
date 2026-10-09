@@ -4105,7 +4105,11 @@ function atualizarInclinacao(giro, dt, lateral, mirando) {
 
 /* Esteira: pontinhos que ficam para trás enquanto a nave anda e vão sumindo. */
 let rastro = [];
-const RASTRO_MAX = 26;
+/* Comprimento do rastro de energia: quanto tempo cada ponto vive. A cauda
+   cresce com a velocidade, porque a nave anda mais nesse tempo. RASTRO_MAX
+   (pares de pontos) só segura o pior caso; tem que caber a vida inteira. */
+const RASTRO_VIDA = 1100;    // ms (era 520)
+const RASTRO_MAX  = 80;
 
 /* ===================== MOTOR =====================
    impulso: 0 parado .. 1 velocidade máxima, suavizado (sobe rápido, desce
@@ -4182,7 +4186,7 @@ function alimentarRastro(dt) {
       }
     }
   }
-  const limite = G.tempo - 520;
+  const limite = G.tempo - RASTRO_VIDA;
   while (rastro.length && rastro[0].t < limite) rastro.shift();
   if (rastro.length > RASTRO_MAX * 2) rastro.splice(0, rastro.length - RASTRO_MAX * 2);
 
@@ -4199,7 +4203,7 @@ function desenharRastro() {
     const pts = rastro.filter(r => r.lado === lado);
     for (let i = 1; i < pts.length; i++) {
       const a = pts[i-1], b = pts[i];
-      const k = 1 - (G.tempo - b.t) / 520;
+      const k = 1 - (G.tempo - b.t) / RASTRO_VIDA;
       if (k <= 0) continue;
       const f = b.f * b.f;                       // só aparece de verdade em alta
       ctx.strokeStyle = `rgba(${COR_MOTOR.borda},${0.30 * k * f})`;
