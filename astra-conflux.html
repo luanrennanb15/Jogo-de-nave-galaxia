@@ -1791,7 +1791,7 @@ function iniciarSetor(estado) {
   }
   rastro = []; inclinacaoTita = 0; poeira = []; choques = [];
   faiscasMotor = []; motor.impulso = 0; motor.arranque = 0;
-  impactos = []; danoParticulas = []; claroes = []; faiscasImpacto = [];
+  impactos = []; danoParticulas = []; claroes = []; faiscasImpacto = []; disparos = [];
   tremor = { forca: 0, ate: 0 };
   G.inimigos = []; G.loot = []; G.caixas = []; G.particulas = []; G.danos = []; G.tiros = [];
   G.coleta = null; G.salto = null; G.saltoAlvo = null; G.portalPerto = null;
@@ -2410,12 +2410,18 @@ function atualizar(dt) {
     gastarMunicao(G.ammoSel, Math.max(1, canhoesNave()));
     // o dano só acontece quando o tiro chega no alvo
     const am = AMMO[G.ammoSel] || AMMO.lcb10;
-    ladoCanhao = -ladoCanhao;                       // alterna esquerdo/direito
-    const boca = bocaDoCanhao(ladoCanhao);
+    // salva: o grupo da vez dispara junto; só o primeiro cano leva o dano
+    const grupos = SALVAS[G.nave] || SALVA_PADRAO;
+    const grupo = grupos[grupoSalva % grupos.length];
+    grupoSalva = (grupoSalva + 1) % grupos.length;
     const corTiro = am.cor || corLaser();
-    atirarLaser(p, p.alvo, dmgTotal() * (0.9 + Math.random()*0.2),
-      corTiro, true, false, { rouba: !!am.rouba, forma: am.forma, pos: boca, ammo: G.ammoSel });
-    clarao(boca.x, boca.y, corTiro, 7, 90);
+    grupo.forEach((spec, i) => {
+      const boca = posDoCanhao(spec);
+      atirarLaser(p, p.alvo, i === 0 ? dmgTotal() * (0.9 + Math.random()*0.2) : 0,
+        corTiro, true, false, { rouba: i === 0 && !!am.rouba, forma: am.forma, pos: boca,
+                               ammo: G.ammoSel, visual: i > 0 });
+      registrarDisparo(spec, corTiro);
+    });
     p.alvo.agro = true;
     p.alvo.permitido = T + PERMISSAO_REVIDE;
     beep(320, 0.04);
@@ -2644,7 +2650,10 @@ function atualizar(dt) {
       } else if (b.doJogador && b.visual) {
         // enfeite ou tiro órfão: só o clarão, sem dano
         if (b.curvo || b.foguete) explosao(b.alvo.x, b.alvo.y, b.cor, 14);
-        else faisca(b.alvo.x, b.alvo.y, b.cor);
+        else if (b.alvo.d) {
+          const ra = (b.alvo.d.raio || 16) * 0.6, ang = Math.atan2(b.y - b.alvo.y, b.x - b.alvo.x);
+          impactoLuminoso(b.alvo.x + Math.cos(ang)*ra, b.alvo.y + Math.sin(ang)*ra, b.cor, ang);
+        } else faisca(b.alvo.x, b.alvo.y, b.cor);
       } else if (b.doJogador) {
         aplicarDano(b.alvo, b.dano, !!b.salva, b.doPet);
         if (b.salva) {
@@ -2785,6 +2794,78 @@ const CANHOES = {
 };
 const CANHAO_PADRAO = { x: 0.40, y: 0.12 };
 let ladoCanhao = 1;
+/* Salvas: cada nave tem grupos de canhões que disparam juntos, alternando
+   entre os grupos (asas juntas → bico → asas → ...). Só o PRIMEIRO cano de
+   cada salva leva o dano de verdade; os outros são enfeite (visual: true),
+   então o dano por disparo continua exatamente o mesmo de antes.
+   x = para a frente, y = para o lado, em frações do comprimento da nave. */
+const SALVAS = {
+  faisca:     [[{ x: 0.12, y: -0.40 }, { x: 0.12, y: 0.40 }], [{ x: 0.50, y: 0 }]],
+  lamina:     [[{ x: 0.30, y: -0.24 }, { x: 0.30, y: 0.24 }], [{ x: 0.50, y: 0 }]],
+  sentinela:  [[{ x: 0.32, y: -0.22 }, { x: 0.32, y: 0.22 }], [{ x: 0.50, y: 0 }]],
+  devastador: [[{ x: 0.30, y: -0.30 }, { x: 0.30, y: 0.30 }], [{ x: 0.50, y: 0 }]],
+  tita:       [[{ x: 0.34, y: -0.30 }, { x: 0.34, y: 0.30 }], [{ x: 0.50, y: 0 }]],
+};
+const SALVA_PADRAO = [[{ x: 0.40, y: -0.12 }, { x: 0.40, y: 0.12 }], [{ x: 0.50, y: 0 }]];
+let grupoSalva = 0;
+function posDoCanhao(spec) {
+  const p = G.player, sp = spriteDaNave(G.nave);
+  const tam = sp ? sp.tam : 30;
+  const ci = sp ? inclDaNave(G.nave) : null, ky = ci ? ci.cosInc : 1;
+  const lx = spec.x * tam, ly = spec.y * tam;
+  const co = Math.cos(p.ang), sn = Math.sin(p.ang);
+  return { x: p.x + lx*co - ly*sn, y: p.y + (lx*sn + ly*co) * ky };
+}
+
+/* Clarão de disparo (boca do canhão), como tiro de arma: uma labareda em
+   estrela apontando para a frente + uma luz em volta que ilumina a nave e a
+   região por um instante. Acompanha a nave (a posição é recalculada a cada
+   quadro a partir do canhão). */
+let disparos = [];
+const DISPARO_DUR = 110;     // ms
+function registrarDisparo(spec, cor) {
+  disparos.push({ spec, cor, t: G.tempo, rot: (Math.random() - 0.5) * 0.5, esc: 0.85 + Math.random() * 0.3 });
+  if (disparos.length > 24) disparos.shift();
+}
+function desenharDisparos() {
+  disparos = disparos.filter(d => G.tempo - d.t < DISPARO_DUR);
+  if (!disparos.length || G.morto) return;
+  const p = G.player;
+  ctx.save(); ctx.globalCompositeOperation = "lighter";
+  for (const d of disparos) {
+    const k = 1 - (G.tempo - d.t) / DISPARO_DUR;            // 1 → 0
+    const o = posDoCanhao(d.spec);
+    // luz na região (ilumina a nave e em volta)
+    const rl = 62 * d.esc;
+    let g = ctx.createRadialGradient(o.x, o.y, 0, o.x, o.y, rl);
+    g.addColorStop(0, corComAlfa(d.cor, 0.42 * k)); g.addColorStop(0.4, corComAlfa(d.cor, 0.16 * k)); g.addColorStop(1, corComAlfa(d.cor, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(o.x, o.y, rl, 0, 6.29); ctx.fill();
+    // labareda: raios em estrela, o da frente bem mais longo
+    ctx.save(); ctx.translate(o.x, o.y); ctx.rotate(p.ang + d.rot * 0.2);
+    const tam = (13 + 11 * k) * d.esc;
+    const raio = (ang, comp, larg) => {
+      ctx.save(); ctx.rotate(ang);
+      const gr = ctx.createLinearGradient(0, 0, comp, 0);
+      gr.addColorStop(0, "rgba(255,255,255," + (0.95 * k) + ")");
+      gr.addColorStop(0.35, corComAlfa(d.cor, 0.85 * k)); gr.addColorStop(1, corComAlfa(d.cor, 0));
+      ctx.fillStyle = gr;
+      ctx.beginPath(); ctx.moveTo(0, -larg); ctx.quadraticCurveTo(comp * 0.4, -larg * 0.8, comp, 0);
+      ctx.quadraticCurveTo(comp * 0.4, larg * 0.8, 0, larg); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    };
+    raio(0, tam * 2.0, 3.6 * d.esc);                     // labareda para a frente
+    raio(0.75 + d.rot, tam * 0.9, 1.8 * d.esc);          // pontas laterais
+    raio(-0.75 + d.rot, tam * 0.9, 1.8 * d.esc);
+    raio(Math.PI * 0.5, tam * 0.35, 0.9 * d.esc);
+    raio(-Math.PI * 0.5, tam * 0.35, 0.9 * d.esc);
+    // miolo branco
+    g = ctx.createRadialGradient(0, 0, 0, 0, 0, 7 * d.esc);
+    g.addColorStop(0, "rgba(255,255,255," + k + ")"); g.addColorStop(1, corComAlfa(d.cor, 0));
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0, 0, 7 * d.esc, 0, 6.29); ctx.fill();
+    ctx.restore();
+  }
+  ctx.restore();
+}
 let claroes = [];                       // clarões de boca de canhão e de impacto
 function bocaDoCanhao(lado) {
   const p = G.player, sp = spriteDaNave(G.nave);
@@ -3801,7 +3882,7 @@ function desenhar(t) {
     }
   }
   desenharOndas(t);
-  if (!G.morto) { desenharDano(); desenharEscudo(t); }
+  if (!G.morto) { desenharDano(); desenharEscudo(t); desenharDisparos(); }
   if (!G.morto) desenharStatusJogador();
 
   if (dist(p.x,p.y,p.dx,p.dy) > 12) {
@@ -3876,12 +3957,14 @@ function desenharAvisoFora(t) {
    do núcleo, com comprimento proporcional à velocidade do tiro. */
 const PERFIS_FEIXE = {
   //            comp  larg  núcleo  brilho  rastro(×vel)
-  lcb10:   { comp: 20, larg: 2.6, nucleo: 0.40, brilho: 0.30, rastro: 3.2 },   // fino e rápido
-  lcb20:   { comp: 22, larg: 2.8, nucleo: 0.42, brilho: 0.32, rastro: 3.4 },
-  mcb30:   { comp: 24, larg: 3.4, nucleo: 0.46, brilho: 0.36, rastro: 3.4 },   // plasma mais encorpado
-  ucb100:  { comp: 26, larg: 4.0, nucleo: 0.50, brilho: 0.40, rastro: 3.6, duplo: true },  // rastro duplo
+  /* todos do tamanho do ×5 (RSB-300); a identidade fica no núcleo, no
+     brilho e no rastro (o UCB-100 mantém o rastro duplo) */
+  lcb10:   { comp: 40, larg: 5.4, nucleo: 0.40, brilho: 0.40, rastro: 3.0 },
+  lcb20:   { comp: 40, larg: 5.6, nucleo: 0.42, brilho: 0.42, rastro: 3.0 },
+  mcb30:   { comp: 40, larg: 5.8, nucleo: 0.46, brilho: 0.44, rastro: 3.0 },
+  ucb100:  { comp: 40, larg: 6.0, nucleo: 0.48, brilho: 0.46, rastro: 3.0, duplo: true },
   rajada:  { comp: 40, larg: 6.0, nucleo: 0.46, brilho: 0.48, rastro: 3.0, quente: true }, // RSB-300
-  padrao:  { comp: 20, larg: 2.6, nucleo: 0.40, brilho: 0.30, rastro: 3.0 },
+  padrao:  { comp: 40, larg: 5.4, nucleo: 0.40, brilho: 0.40, rastro: 3.0 },
   inimigo: { comp: 16, larg: 2.2, nucleo: 0.36, brilho: 0.26, rastro: 2.6 },
 };
 const ESC_FEIXE = 3;                          // resolução do sprite (px por unidade)
