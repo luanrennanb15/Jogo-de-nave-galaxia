@@ -4430,7 +4430,8 @@ function explodir(x, y, cor, tam, opc) {
 function morteDeChefe(en) {
   const ed = en.d, fig = ed.sprite ? SPRITE_INIMIGO[ed.sprite] : null;
   const dur = 1650;
-  colapsos.push({ x: en.x, y: en.y, ang: en.ang || 0, r: ed.raio, cor: ed.cor, fig, d: ed,
+  colapsos.push({ x: en.x, y: en.y, ang: en.ang || 0, r: ed.raio, cor: ed.cor, fig, d: ed, inc: en.inc || 0,
+                  ci: ed.sprite ? inclDoInimigo(ed.sprite) : null,
                   t: G.tempo, dur, prox: G.tempo + 60, raios: Array.from({ length: 7 }, () => Math.random() * 6.28) });
   explodir(en.x + (Math.random() - 0.5) * ed.raio, en.y + (Math.random() - 0.5) * ed.raio, ed.cor, 16, { semTremor: true });
   sacudir(5);
@@ -4467,6 +4468,15 @@ function desenharColapsos(t) {
     const k = clamp((G.tempo - c.t) / c.dur, 0, 1);
     const tr = (1.5 + k * 4) * (c.r / 40);
     const x = c.x + (Math.random() - 0.5) * tr, y = c.y + (Math.random() - 0.5) * tr;
+    if (c.ci && c.fig) {
+      // chefe com folha inclinada: o mesmo desenho 3D, girando devagar e esquentando
+      const esc = (c.r * c.fig.tam * 0.9) / c.ci.tam;
+      quadroIncl(c.ci, x, y, c.ang + k * 0.25, c.inc, esc);
+      ctx.save(); ctx.globalCompositeOperation = "lighter";
+      ctx.globalAlpha = Math.min(1, k * 0.8 + (Math.sin(t / (60 - 35 * k)) * 0.5 + 0.5) * 0.35 * k);
+      quadroIncl(c.ci, x, y, c.ang + k * 0.25, c.inc, esc);
+      ctx.restore();
+    } else {
     ctx.save(); ctx.translate(x, y); ctx.rotate(c.ang + k * 0.25);
     if (c.fig && c.fig.img.complete && c.fig.img.naturalWidth > 0) {
       const w = c.r * c.fig.tam, h = w * c.fig.alt / c.fig.larg;
@@ -4481,6 +4491,7 @@ function desenharColapsos(t) {
       ctx.beginPath(); ctx.arc(0, 0, c.r * 0.8, 0, 6.29); ctx.fill(); ctx.globalAlpha = 1;
     }
     ctx.restore();
+    }
     // rachaduras de luz saindo do núcleo
     ctx.save(); ctx.globalCompositeOperation = "lighter"; ctx.lineCap = "round";
     for (const a0 of c.raios) {
@@ -4907,7 +4918,7 @@ const INCL_NAVE = {
 /* Inimigos com a mesma câmera inclinada das suas naves (32 direções × 13
    inclinações, luz Padrão C). `tam` é o comprimento renderizado; no jogo a
    escala acompanha o tamanho que o bicho já tinha. Por enquanto: Drone
-   Errante (mapa 1), Sonda Corrosiva (mapas 2 e 3), Corsário (mapas 3 e 4), Ceifador (mapa 3) e Predador (mapas 3 e 4). */
+   Errante (mapa 1), Sonda Corrosiva (mapas 2 e 3), Corsário (mapas 3 e 4), Ceifador (mapa 3), Predador (mapas 3 e 4) e Devorador (chefe do mapa 4). */
 const INCL_INIMIGO = {
   errante: { arqs:Array.from({ length: 13 }, (_, i) => "nave-errante-" + i + ".webp"),
              N:32, cols:8, fw:154, fh:138, px:2.5, inc:40, tam:57 },
@@ -4918,6 +4929,9 @@ const INCL_INIMIGO = {
   ceifador:{ arqs:Array.from({ length: 13 }, (_, i) => "nave-ceifador-" + i + ".webp"),
              N:32, cols:8, fw:260, fh:240, px:2.5, inc:40, tam:97 },
   predador:{ arqs:Array.from({ length: 13 }, (_, i) => "nave-predador-" + i + ".webp"),
+             N:32, cols:8, fw:232, fh:210, px:2.5, inc:40, tam:87 },
+  devorador:{ arqs:Array.from({ length: 13 }, (_, i) => "nave-devorador-" + i + ".webp"),
+             N:32, cols:8, fw:440, fh:426, px:2.5, inc:40, tam:140 },
 };
 function inclDoInimigo(id) {
   const c = INCL_INIMIGO[id];
