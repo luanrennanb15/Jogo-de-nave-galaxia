@@ -4919,7 +4919,7 @@ const INCL_NAVE = {
 /* Inimigos com a mesma câmera inclinada das suas naves (32 direções × 13
    inclinações, luz Padrão C). `tam` é o comprimento renderizado; no jogo a
    escala acompanha o tamanho que o bicho já tinha. Por enquanto: Drone
-   Errante (mapa 1), Sonda Corrosiva (mapas 2 e 3), Corsário (mapas 3 e 4), Ceifador (mapa 3), Predador (mapas 3 e 4), Devorador (chefe do mapa 4) e Cruzziun (chefe). */
+   Errante (mapa 1), Sonda Corrosiva (mapas 2 e 3), Corsário (mapas 3 e 4), Ceifador (mapa 3), Predador (mapas 3 e 4), Devorador (chefe do mapa 4), Cruzziun (chefe) e Protetor (guarda do Cruzziun). */
 const INCL_INIMIGO = {
   errante: { arqs:Array.from({ length: 13 }, (_, i) => "nave-errante-" + i + ".webp"),
              N:32, cols:8, fw:154, fh:138, px:2.5, inc:40, tam:57 },
@@ -4937,6 +4937,8 @@ const INCL_INIMIGO = {
      unidade e 5 inclinações de curva (−45° a +45°) — ele quase não faz curva. */
   cruzziun:{ arqs:Array.from({ length: 5 }, (_, i) => "nave-cruzziun-" + i + ".webp"),
              N:32, cols:8, fw:484, fh:468, px:1.2, inc:40, tam:385 },
+  protetor:{ arqs:Array.from({ length: 13 }, (_, i) => "nave-protetor-" + i + ".webp"),
+             N:32, cols:8, fw:176, fh:164, px:2.5, inc:40, tam:62 },
 };
 /* Cruzziun: os cinco motores da traseira sempre acesos (azul, pulsando
    devagar, mais fortes andando), luzes de navegação piscando nas pontas de
