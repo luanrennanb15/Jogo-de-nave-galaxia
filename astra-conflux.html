@@ -3006,7 +3006,7 @@ function atualizar(dt) {
      Para frear não há limite, então ela nunca passa do ponto. */
   const angAlvo = mirando ? Math.atan2(p.alvo.y - p.y, p.alvo.x - p.x) : rumo;
   if (angAlvo !== null) {
-    const desejado = anguloSuave(p.ang, angAlvo, kQuadro(mirando ? 0.2 : 0.14, dt));
+    const desejado = anguloSuave(p.ang, angAlvo, kQuadro(mirando ? 0.32 : 0.28, dt));
     let dDes = desejado - p.ang; dDes = Math.atan2(Math.sin(dDes), Math.cos(dDes));
     const wDes = dDes / Math.max(1, dt);
     let w = p.vAng || 0;
@@ -9287,7 +9287,7 @@ function fmt(n) { return Math.round(n).toLocaleString("pt-BR"); }
    horário, porque é o sentido em que `a` cresce. O atan2 acerta em qualquer
    magnitude, e reduzir o resultado mantém o ângulo curto para sempre. */
 /* fração de aproximação equivalente a `k` por quadro de 60 fps, para um quadro de `dt` ms */
-const ACEL_GIRO = 0.00012;   // rad/ms²: em ~0,2 s chega ao giro máximo
+const ACEL_GIRO = 0.00032;   // rad/ms²: arranque curto, meia-volta em ~0,27 s
 function kQuadro(k, dt) { return 1 - Math.pow(1 - k, (dt || 16.67) / 16.67); }
 function anguloSuave(a, alvo, k) {
   const d = Math.atan2(Math.sin(alvo - a), Math.cos(alvo - a));
