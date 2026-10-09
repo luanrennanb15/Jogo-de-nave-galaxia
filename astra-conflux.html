@@ -4907,7 +4907,7 @@ const INCL_NAVE = {
 /* Inimigos com a mesma câmera inclinada das suas naves (32 direções × 13
    inclinações, luz Padrão C). `tam` é o comprimento renderizado; no jogo a
    escala acompanha o tamanho que o bicho já tinha. Por enquanto: Drone
-   Errante (mapa 1), Sonda Corrosiva (mapas 2 e 3), Corsário (mapas 3 e 4) e Ceifador (mapa 3). */
+   Errante (mapa 1), Sonda Corrosiva (mapas 2 e 3), Corsário (mapas 3 e 4), Ceifador (mapa 3) e Predador (mapas 3 e 4). */
 const INCL_INIMIGO = {
   errante: { arqs:Array.from({ length: 13 }, (_, i) => "nave-errante-" + i + ".webp"),
              N:32, cols:8, fw:154, fh:138, px:2.5, inc:40, tam:57 },
@@ -4917,6 +4917,7 @@ const INCL_INIMIGO = {
              N:32, cols:8, fw:168, fh:148, px:2.5, inc:40, tam:65 },
   ceifador:{ arqs:Array.from({ length: 13 }, (_, i) => "nave-ceifador-" + i + ".webp"),
              N:32, cols:8, fw:260, fh:240, px:2.5, inc:40, tam:97 },
+  predador:{ arqs:Array.from({ length: 13 }, (_, i) => "nave-predador-" + i + ".webp"),
 };
 function inclDoInimigo(id) {
   const c = INCL_INIMIGO[id];
