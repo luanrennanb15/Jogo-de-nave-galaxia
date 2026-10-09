@@ -3811,7 +3811,7 @@ function desenharTiro(b, t) {
 function desenharNaveSprite(s, x, y, ang, t) {
   const p = G.player;
   const inc = inclinacaoTita;                     // −1 a 1, lido da velocidade de giro
-  const w = s.tam, h = s.tam * s.alt / s.larg;
+  const w = s.tam * (s.mold || 1), h = w * s.alt / s.larg;
   const respiro = !p.movendo ? 1 + Math.sin(t/620)*0.018 : 1;
   const q = s.q > 1 ? clamp(Math.round(s.meio + inc * s.inv * s.meio), 0, s.q - 1) : 0;
 
@@ -3829,7 +3829,8 @@ function desenharNaveSprite(s, x, y, ang, t) {
     ctx.scale(1, 1 - Math.abs(inc) * 0.22);
   }
 
-  const põe = () => ctx.drawImage(s.img, q * s.larg, 0, s.larg, s.alt, -w/2, -h/2, w, h);
+  const fw = s.fw || s.larg, fh = s.fh || s.alt;
+  const põe = () => ctx.drawImage(s.img, q * fw, 0, fw, fh, -w/2, -h/2, w, h);
   põe();
   // clarão no casco logo depois de apanhar
   const desde = G.tempo - (p.ultimoDano || -9999);
@@ -3897,16 +3898,21 @@ function desenharNave(x,y,ang,cor,tam) {
    a curva é rotação de verdade, vinda do modelo 3D. O código ainda sabe
    lidar com tira de um quadro só (q: 1), fingindo a curva ao deformar o
    sprite, mas hoje nenhuma das cinco usa isso. */
-/* `inv` conserta a mão da tira. As duas naves de modelo 3D foram renderizadas
-   com o giro aplicado em espaços diferentes — uma no espaço do modelo, outra
-   já no da tela — e nesses dois casos o mesmo ângulo sai espelhado. Em vez de
-   renderizar tudo de novo, cada tira diz para que lado ela conta. */
+/* Tiras renderizadas de novo em 2026-10 a partir dos .glb, em alta resolução
+   (3 pixels por unidade, para telas retina) e com iluminação nova: luz
+   principal oblíqua, contra-luz azul e quente para desenhar a borda, e
+   reflexo metálico. As cinco agora estão no mesmo espaço e mostram o lado
+   de cima da nave, por isso `inv` é 1 em todas.
+   larg/alt: tamanho do quadro em unidades (proporção);  fw/fh: tamanho do
+   quadro em pixels dentro da imagem;  mold: o quadro tem uma folga em volta
+   da nave (10%), então ele é desenhado `mold` vezes maior que `tam` — `tam`
+   continua sendo o comprimento da nave, e o resto do jogo não muda. */
 const SPRITE_NAVE = {
-  faisca:     { arq:"nave-faisca.png",     tam: 69.3, q: 33, larg:120, alt: 84, inv:  1 },
-  lamina:     { arq:"nave-lamina.png",     tam: 71.6, q: 33, larg:120, alt: 92, inv:  1 },
-  sentinela:  { arq:"nave-sentinela.png",  tam: 90.1, q: 33, larg: 96, alt: 96, inv: -1 },
-  devastador: { arq:"nave-devastador.png", tam: 97, q: 33, larg: 96, alt: 84, inv: -1 },
-  tita:       { arq:"nave-tita.png",       tam: 106.3, q: 33, larg:104, alt: 70, inv:  1 },
+  faisca:     { arq:"nave-faisca.webp",    tam:  69.3, q: 33, larg:132, alt:85, fw:396, fh:255, mold:1.1, inv: 1 },
+  lamina:     { arq:"nave-lamina.webp",    tam:  71.6, q: 33, larg:132, alt:93, fw:396, fh:279, mold:1.1, inv: 1 },
+  sentinela:  { arq:"nave-sentinela.webp", tam:  90.1, q: 33, larg:105.667, alt:99, fw:317, fh:297, mold:1.1, inv: 1 },
+  devastador: { arq:"nave-devastador.webp",tam:    97, q: 33, larg:105.667, alt:79, fw:317, fh:237, mold:1.1, inv: 1 },
+  tita:       { arq:"nave-tita.webp",      tam: 106.3, q: 33, larg:114.333, alt:71, fw:343, fh:213, mold:1.1, inv: 1 },
 };
 for (const id in SPRITE_NAVE) {
   const s = SPRITE_NAVE[id];
@@ -4369,11 +4375,12 @@ function desenharInimigo(en, t) {
     const sp = ed.nave ? spriteDaNave(ed.nave) : null;
     if (sp) {
       desenharDronesInimigo(en);
-      const w = r * 3.2, h = w * sp.alt / sp.larg;
+      const w = r * 3.2 * (sp.mold || 1), h = w * sp.alt / sp.larg;
       const inc = en.inc || 0;
       const q = sp.q > 1 ? clamp(Math.round(sp.meio + inc * sp.inv * sp.meio), 0, sp.q - 1) : 0;
       ctx.save(); ctx.translate(en.x, en.y); ctx.rotate(en.ang);
-      ctx.drawImage(sp.img, q*sp.larg, 0, sp.larg, sp.alt, -w/2, -h/2, w, h);
+      const fw = sp.fw || sp.larg, fh = sp.fh || sp.alt;
+      ctx.drawImage(sp.img, q*fw, 0, fw, fh, -w/2, -h/2, w, h);
       ctx.restore();
     } else {
       desenharNave(en.x, en.y, en.ang, ed.cor, r);
