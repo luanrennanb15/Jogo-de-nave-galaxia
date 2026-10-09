@@ -2358,8 +2358,25 @@ function atualizar(dt) {
   // em combate a nave aponta para o alvo; fora dele, para onde está indo
   const angAntes = p.ang;
   const mirando = p.atacando && alvoOk(p.alvo);
-  if (mirando) p.ang = anguloSuave(p.ang, Math.atan2(p.alvo.y - p.y, p.alvo.x - p.x), 0.2);
-  else if (rumo !== null) p.ang = anguloSuave(p.ang, rumo, 0.14);
+  /* kQuadro: o mesmo giro por segundo em qualquer ritmo de quadro (60, 120,
+     quadro atrasado...). Antes era um tanto fixo POR QUADRO, então com o
+     navegador oscilando entre 14 e 20 ms a nave girava aos solavancos e a
+     inclinação (que lê esse giro) tremia junto. */
+  /* Arranque do giro: a velocidade de giro sobe aos poucos (ACEL_GIRO) em vez
+     de pular para o máximo no clique — era isso o "tranco" ao mudar de rumo.
+     Para frear não há limite, então ela nunca passa do ponto. */
+  const angAlvo = mirando ? Math.atan2(p.alvo.y - p.y, p.alvo.x - p.x) : rumo;
+  if (angAlvo !== null) {
+    const desejado = anguloSuave(p.ang, angAlvo, kQuadro(mirando ? 0.2 : 0.14, dt));
+    let dDes = desejado - p.ang; dDes = Math.atan2(Math.sin(dDes), Math.cos(dDes));
+    const wDes = dDes / Math.max(1, dt);
+    let w = p.vAng || 0;
+    if (Math.sign(wDes) !== Math.sign(w) || Math.abs(wDes) > Math.abs(w))
+      w += clamp(wDes - w, -ACEL_GIRO * dt, ACEL_GIRO * dt);
+    else w = wDes;
+    p.vAng = w;
+    p.ang = Math.atan2(Math.sin(p.ang + w * dt), Math.cos(p.ang + w * dt));
+  } else p.vAng = 0;
 
   // quanto ela girou neste quadro alimenta a inclinação e a esteira
   let giro = p.ang - angAntes;
@@ -2533,10 +2550,10 @@ function atualizar(dt) {
       const vel = ed.speed * (en.velMult || 1);   // recuo faz a guarda voltar devagar
       en.x += Math.cos(a) * vel * dt/16;
       en.y += Math.sin(a) * vel * dt/16;
-      if (!en.agro) en.ang = anguloSuave(en.ang, a, 0.1);
+      if (!en.agro) en.ang = anguloSuave(en.ang, a, kQuadro(0.1, dt));
     }
     // em combate o inimigo fica virado para você
-    if (en.agro) en.ang = anguloSuave(en.ang, Math.atan2(p.y - en.y, p.x - en.x), 0.14);
+    if (en.agro) en.ang = anguloSuave(en.ang, Math.atan2(p.y - en.y, p.x - en.x), kQuadro(0.14, dt));
 
     /* Os mesmos enfeites da sua nave, agora para eles: a inclinação na curva
        lida da velocidade de giro, e a esteira de pontinhos atrás enquanto
@@ -4589,6 +4606,7 @@ function desenharTiro(b, t) {
    - inclinação de curva: mesma ideia, com a troca concentrada no meio
    `est` guarda a velocidade de giro de quem está sendo desenhado (a sua nave
    ou o piloto inimigo); sem ele, vale o quadro mais perto. */
+let TROCA_MIN = 0.25, TROCA_MAX = 0.45;   // largura da troca entre direções vizinhas, virando devagar / rápido
 const suave01 = v => v <= 0 ? 0 : v >= 1 ? 1 : v * v * (3 - 2 * v);
 function trocaCurta(f, larg) {                // f 0..1 no passo -> peso do vizinho
   if (larg <= 0.01) return f >= 0.5 ? 1 : 0;
@@ -4618,7 +4636,7 @@ function quadroIncl(c, x, y, ang, inc, escala, est) {
     giro = est._qG || 0;
   }
   // parada: quadro mais perto; virando: troca curta (25% a 45% do passo, conforme a velocidade)
-  const largD = giro < 0.0002 ? 0 : 0.25 + 0.2 * clamp(giro / 0.004, 0, 1);
+  const largD = giro < 0.0002 ? 0 : TROCA_MIN + (TROCA_MAX - TROCA_MIN) * clamp(giro / 0.004, 0, 1);
   const tD = trocaCurta(fd, largD);
   const tR = trocaCurta(fr, 0.3);
 
@@ -4917,7 +4935,7 @@ function atualizarInclinacao(giro, dt, lateral, mirando) {
   let alvo = giro * GANHO_INCLINACAO + (lateral || 0) * INCL_LATERAL;
   if (mirando) alvo += Math.sin(G.tempo * Math.PI / BALANCO_RITMO) * INCL_BALANCO;
   alvo = clamp(alvo, -1, 1);                            // −1..1
-  inclinacaoTita += (alvo - inclinacaoTita) * Math.min(1, 0.15 * dt / 16);
+  inclinacaoTita += (alvo - inclinacaoTita) * kQuadro(0.15, dt);
 }
 
 /* Esteira: pontinhos que ficam para trás enquanto a nave anda e vão sumindo. */
@@ -8255,6 +8273,9 @@ function fmt(n) { return Math.round(n).toLocaleString("pt-BR"); }
    2π de erro — a nave se jogava para o lado errado. Só acontecia no sentido
    horário, porque é o sentido em que `a` cresce. O atan2 acerta em qualquer
    magnitude, e reduzir o resultado mantém o ângulo curto para sempre. */
+/* fração de aproximação equivalente a `k` por quadro de 60 fps, para um quadro de `dt` ms */
+const ACEL_GIRO = 0.00012;   // rad/ms²: em ~0,2 s chega ao giro máximo
+function kQuadro(k, dt) { return 1 - Math.pow(1 - k, (dt || 16.67) / 16.67); }
 function anguloSuave(a, alvo, k) {
   const d = Math.atan2(Math.sin(alvo - a), Math.cos(alvo - a));
   let r = a + d*k;
