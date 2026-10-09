@@ -16,11 +16,11 @@ modelos de novo.
 QUAL MODELO VIRA O QUÊ
 ----------------------
 
-  faisca.glb                              -> nave-faisca.png  + giro-faisca.png
-  lamina.glb                              -> nave-lamina.png  + giro-lamina.png
-  sentinela.glb                           -> nave-sentinela.png + giro-sentinela.png
-  Devastador.glb                          -> nave-devastador.png + giro-devastador.png
-  red_goliath_spaceship_-_darkorbit_game.glb -> nave-tita.png + giro-tita.png   (é a Titã)
+  faisca.glb                              -> nave-faisca.webp  + giro-faisca.png
+  lamina.glb                              -> nave-lamina.webp  + giro-lamina.png
+  sentinela.glb                           -> nave-sentinela.webp + giro-sentinela.png
+  Devastador.glb                          -> nave-devastador.webp + giro-devastador.png
+  red_goliath_spaceship_-_darkorbit_game.glb -> nave-tita.webp + giro-tita.png   (é a Titã)
 
   androiddemo.glb                         -> drone-android.png  + giro-android.png
   drone inovat.glb                        -> drone-inovat.png   + giro-inovat.png
