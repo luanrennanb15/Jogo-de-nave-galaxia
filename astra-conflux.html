@@ -4346,7 +4346,9 @@ let luzNeutra = 0;
    - escudo baixo (< 25%): luzes vermelhas piscando nas laterais da nave
    - casco ferido: fumaça abaixo de 60% de vida, faíscas abaixo de 35% e
      fogo abaixo de 15% — mais forte quanto pior */
-const ESCUDO_VIDA_FX   = 420;    // ms que a bolha fica acesa depois do tiro
+const ESCUDO_VIDA_FX   = 480;    // ms que o pedaço do escudo fica aceso depois do tiro
+const ESCUDO_RAIO     = 0.88;   // raio da bolha, em comprimentos de nave
+const ESCUDO_PEDACO   = 0.72;   // tamanho do pedaço que acende (1 = metade da bolha)
 const ESCUDO_BAIXO     = 0.25;   // abaixo disso as luzes de alerta piscam
 const DANO_FUMACA      = 0.60;   // vida (fração) em que começa a fumaça
 const DANO_FAISCA      = 0.35;   // ...as faíscas
@@ -4365,7 +4367,7 @@ function registrarImpacto(ang, noEscudo, noCasco) {
 function geometriaEscudo() {
   const sp = spriteDaNave(G.nave);
   const ci = sp ? inclDaNave(G.nave) : null;
-  return { R: sp ? sp.tam * 0.66 : 26, ky: ci ? ci.cosInc : 1, sp };
+  return { R: sp ? sp.tam * ESCUDO_RAIO : 32, ky: ci ? ci.cosInc : 1, sp };
 }
 
 /* textura de hexágonos, feita uma vez: grade fina, mais forte na borda */
@@ -4396,6 +4398,31 @@ function texturaHex() {
   return (texHex = c);
 }
 
+/* Monta, num canvas reaproveitado, só o pedaço da bolha virado para `ang`:
+   hexágonos + a borda brilhante, recortados por uma mancha que é forte no
+   ponto do impacto e some em direção ao outro lado da nave. */
+let pedacoCanvas = null;
+function pedacoDeEscudo(ang) {
+  const tex = texturaHex(), N = tex.width;
+  if (!pedacoCanvas) { pedacoCanvas = document.createElement("canvas"); pedacoCanvas.width = pedacoCanvas.height = N; }
+  const x = pedacoCanvas.getContext("2d"), c = N / 2;
+  x.globalCompositeOperation = "source-over";
+  x.clearRect(0, 0, N, N);
+  x.drawImage(tex, 0, 0);
+  // borda acesa (a "casca" do escudo)
+  const g = x.createRadialGradient(c, c, c * 0.62, c, c, c);
+  g.addColorStop(0, "rgba(60,170,255,0)"); g.addColorStop(0.75, "rgba(80,195,255,.45)");
+  g.addColorStop(0.97, "rgba(170,240,255,.95)"); g.addColorStop(1, "rgba(170,240,255,0)");
+  x.fillStyle = g; x.fillRect(0, 0, N, N);
+  // recorte: só o lado do impacto
+  const px = c + Math.cos(ang) * c * 0.98, py = c + Math.sin(ang) * c * 0.98;
+  const m = x.createRadialGradient(px, py, 0, px, py, c * 1.25 * ESCUDO_PEDACO);
+  m.addColorStop(0, "rgba(0,0,0,1)"); m.addColorStop(0.45, "rgba(0,0,0,.75)"); m.addColorStop(1, "rgba(0,0,0,0)");
+  x.globalCompositeOperation = "destination-in";
+  x.fillStyle = m; x.fillRect(0, 0, N, N);
+  return pedacoCanvas;
+}
+
 function desenharEscudo(t) {
   const p = G.player;
   if (G.morto || invisivel()) return;
@@ -4407,18 +4434,14 @@ function desenharEscudo(t) {
   ctx.translate(p.x, p.y); ctx.scale(1, ky);
   ctx.globalCompositeOperation = "lighter";
 
-  // bolha: soma a luz dos impactos recentes que o escudo segurou
-  let acesa = 0;
-  for (const im of impactos) if (im.escudo) acesa = Math.max(acesa, 1 - (G.tempo - im.t) / ESCUDO_VIDA_FX);
-  if (acesa > 0) {
-    const a0 = acesa * (0.35 + 0.65 * Math.max(0.25, fr));
-    ctx.globalAlpha = a0 * 0.85;
-    ctx.drawImage(texturaHex(), -R, -R, R * 2, R * 2);
-    const g = ctx.createRadialGradient(0, 0, R * 0.55, 0, 0, R);
-    g.addColorStop(0, "rgba(60,170,255,0)"); g.addColorStop(0.8, "rgba(70,190,255,.25)");
-    g.addColorStop(1, "rgba(140,230,255,.55)");
-    ctx.globalAlpha = a0; ctx.fillStyle = g;
-    ctx.beginPath(); ctx.arc(0, 0, R, 0, 6.29); ctx.fill();
+  // escudo: acende só o pedaço do lado atingido, apagando em volta
+  for (const im of impactos) {
+    if (!im.escudo) continue;
+    const k = 1 - (G.tempo - im.t) / ESCUDO_VIDA_FX;
+    if (k <= 0) continue;
+    const pedaco = pedacoDeEscudo(im.ang);
+    ctx.globalAlpha = k * (0.45 + 0.55 * Math.max(0.25, fr));
+    ctx.drawImage(pedaco, -R, -R, R * 2, R * 2);
   }
 
   // ondas e clarão em cada ponto atingido
@@ -4444,7 +4467,7 @@ function desenharEscudo(t) {
       if (f <= 0 || f >= 1) continue;
       ctx.strokeStyle = `rgba(${cor},${0.75 * (1 - f)})`;
       ctx.lineWidth = 2.6 * (1 - f) + 0.4;
-      ctx.beginPath(); ctx.arc(ix, iy, R * (0.12 + f * (noEscudo ? 1.25 : 0.7)), 0, 6.29); ctx.stroke();
+      ctx.beginPath(); ctx.arc(ix, iy, R * (0.10 + f * (noEscudo ? 0.75 : 0.7)), 0, 6.29); ctx.stroke();
     }
     ctx.restore();
   }
