@@ -3361,7 +3361,12 @@ function atualizar(dt) {
     const o = G.coleta.obj;
     const lista = G.coleta.tipo === "loot" ? G.loot : G.coleta.tipo === "minerio" ? G.minerios : G.caixas;
     const idx = lista.indexOf(o);
+    const qc = idx >= 0 ? pontoDeColeta(o) : null;
     if (idx < 0) G.coleta = null;
+    /* Qualquer coisa que mude o destino da nave (tecla de parar, joystick,
+       clique no minimapa, arrastar...) interrompe a coleta. Sem isso ela
+       ficava "presa" e o próximo clique de coletar era ignorado. */
+    else if (Math.hypot(p.dx - qc.x, p.dy - qc.y) > 6) G.coleta = null;
     else if (dist(p.x, p.y, pontoDeColeta(o).x, pontoDeColeta(o).y) <= PARADA_COLETA) {
       if (G.coleta.t0 == null) G.coleta.t0 = T;
       if (T - G.coleta.t0 >= TEMPO_COLETA) {
